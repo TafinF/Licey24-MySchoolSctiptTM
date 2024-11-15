@@ -20,30 +20,46 @@ function getHim() {
         colorizeTable(tablePoint[0].lastChild)
     }
 }
-function colorizeTable(tableBody){
-        console.log(tableBody);
-        for (let i = 0; i < tableBody.childNodes.length; i++) {
-            let rouNode = tableBody.childNodes[i] //строки таблицы
-            if (rouNode.childNodes.length > 2) { // пропускаем пустые строки таблицы, возможно можно только первую
-                let pointCount = 0; // количество оценок в строке считать
-                for (let j = 0; j < rouNode.childNodes.length; j++) {// пробегаем по ячейкам
-                    let cellNode = rouNode.childNodes[j].firstChild
-                    if (j == rouNode.childNodes.length - 1) { // последний столбец со средним баллом
-                        if (pointCount > 4) { cellNode.style.backgroundColor = '#CCFFCC'; }
-                        else { cellNode.style.backgroundColor = '#FF9999'; }
-                    }
-                    if (cellNode.hasChildNodes()) {// если есть оценка в ячейке (или н-ка)
-                        let colorVal = ['#FF9999', '#FFFFCC', "#99CCFF",'#CCFFCC'] // варианты цветов
-                        let point = cellNode.firstChild.textContent
-                        if (['2','3','4','5'].includes(point)) { // проверяем оценка это или "Н"
-                            cellNode.style.backgroundColor = colorVal[point-2] // ставим диву в ячейке цвет из массива по значению оценки -2 чтобы в индекс превратить
-                            pointCount = pointCount + 1; // прибавляем счётчик количества оценок
-                            console.log(point);  
-                        }
-
+function insertButton() {
+    let tablePoint = document.querySelectorAll('main');
+    if (tablePoint.length == 0) {
+        setTimeout(insertButton, 1000);
+        console.log("Div для кнопки не ныйден ждём 1с");
+    }
+    else {
+        console.log("Ставим кнопку");
+        let targetDiv = tablePoint[0].firstChild.firstChild.firstChild.firstChild.firstChild
+        console.log(targetDiv);
+        let bu = document.createElement('button');
+        bu.style.cssText = 'padding: 6px 10px 10px 10px; background-color: #4c6ef5; border-radius: 8px; color: white; margin-left: 10px;';
+        bu.textContent = "Покрасить"
+        bu.addEventListener("click", getHim);
+        targetDiv.append(bu);
+    }
+}
+function colorizeTable(tableBody) {
+    console.log(tableBody);
+    for (let i = 0; i < tableBody.childNodes.length; i++) {
+        let rouNode = tableBody.childNodes[i] //строки таблицы
+        if (rouNode.childNodes.length > 2) { // пропускаем пустые строки таблицы, возможно можно только первую
+            let pointCount = 0; // количество оценок в строке считать
+            for (let j = 0; j < rouNode.childNodes.length; j++) {// пробегаем по ячейкам
+                let cellNode = rouNode.childNodes[j].firstChild
+                if (j == rouNode.childNodes.length - 1) { // последний столбец со средним баллом
+                    if (pointCount > 4) { cellNode.style.backgroundColor = '#CCFFCC'; }
+                    else { cellNode.style.backgroundColor = '#FF9999'; }
+                }
+                if (cellNode.hasChildNodes()) {// если есть оценка в ячейке (или н-ка)
+                    let colorVal = ['#FF9999', '#FFFFCC', "#99CCFF", '#CCFFCC'] // варианты цветов
+                    let point = cellNode.firstChild.textContent
+                    if (['2', '3', '4', '5'].includes(point)) { // проверяем оценка это или "Н"
+                        cellNode.style.backgroundColor = colorVal[point - 2] // ставим диву в ячейке цвет из массива по значению оценки -2 чтобы в индекс превратить
+                        pointCount = pointCount + 1; // прибавляем счётчик количества оценок
+                        console.log(point);
                     }
                 }
             }
         }
+    }
 }
-window.onload = function () {getHim();};
+window.onload = function () { getHim(); insertButton(); };
