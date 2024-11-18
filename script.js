@@ -1,13 +1,21 @@
 // ==UserScript==
 // @name         My School Color Point
 // @namespace    http://tampermonkey.net/
-// @version      2024-11-15-2
+// @version      2024-11-18
 // @description  Окрашивает оценки в разные цвета в Моя Школа
 // @author       Tafintsev Feodor taf.f11@ya.ru
 // @match        https://authedu.mosreg.ru/teacher/study-process/journal/my/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=mosreg.ru
 // @grant        none
 // ==/UserScript==
+let mutationObserver = new MutationObserver(mutationCallback);
+
+function mutationCallback(mutations) {
+    console.log("Возможно, таблица пропала. Запускаем поиск");
+    mutationObserver.disconnect();
+    setTimeout(getHim, 2000);
+};
+
 function getHim() {
     let tablePoint = document.querySelectorAll('table'); // получаем таблицу журнала
     if (tablePoint.length == 0) {
@@ -18,8 +26,18 @@ function getHim() {
         console.log("Таблица найдена");
         console.log(tablePoint[0]);
         colorizeTable(tablePoint[0].lastChild)
+        let watchPoint = document.querySelectorAll('main')[0].firstChild; // получаем таблицу журнала
+        mutationObserver.observe(watchPoint, {
+            attributes: true,
+            characterData: true,
+            childList: true,
+            subtree: false,
+            attributeOldValue: true,
+            characterDataOldValue: true
+        });
     }
 }
+
 function insertButton() {
     let tablePoint = document.querySelectorAll('main');
     if (tablePoint.length == 0) {
@@ -39,14 +57,20 @@ function insertButton() {
 }
 function colorizeTable(tableBody) {
     console.log(tableBody);
+    let needPoint = tableBody.childNodes[2].childNodes.length - 3 > 15 ? 5 : 3;
+    console.log("Уроков в триместре:")
+    console.log(tableBody.childNodes[2].childNodes.length - 3)
+    console.log("Оценок за триметр должнобыть не менее:")
+    console.log(needPoint)
     for (let i = 0; i < tableBody.childNodes.length; i++) {
         let rouNode = tableBody.childNodes[i] //строки таблицы
         if (rouNode.childNodes.length > 2) { // пропускаем пустые строки таблицы, возможно можно только первую
             let pointCount = 0; // количество оценок в строке считать
+
             for (let j = 0; j < rouNode.childNodes.length; j++) {// пробегаем по ячейкам
                 let cellNode = rouNode.childNodes[j].firstChild
                 if (j == rouNode.childNodes.length - 1) { // последний столбец со средним баллом
-                    if (pointCount > 4) { cellNode.style.backgroundColor = '#CCFFCC'; }
+                    if (pointCount >= needPoint) { cellNode.style.backgroundColor = '#CCFFCC'; }
                     else { cellNode.style.backgroundColor = '#FF9999'; }
                 }
                 if (cellNode.hasChildNodes()) {// если есть оценка в ячейке (или н-ка)
@@ -55,7 +79,7 @@ function colorizeTable(tableBody) {
                     if (['2', '3', '4', '5'].includes(point)) { // проверяем оценка это или "Н"
                         cellNode.style.backgroundColor = colorVal[point - 2] // ставим диву в ячейке цвет из массива по значению оценки -2 чтобы в индекс превратить
                         pointCount = pointCount + 1; // прибавляем счётчик количества оценок
-                        console.log(point);
+                        //console.log(point);
                     }
                 }
             }
