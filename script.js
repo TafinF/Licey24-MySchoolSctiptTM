@@ -4,7 +4,7 @@
 // @version      2024-11-18
 // @description  Окрашивает оценки в разные цвета в Моя Школа
 // @author       Tafintsev Feodor taf.f11@ya.ru
-// @match        https://authedu.mosreg.ru/teacher/study-process/journal/my/*
+// @match        https://authedu.mosreg.ru/teacher/study-process/journal/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=mosreg.ru
 // @grant        none
 // ==/UserScript==
