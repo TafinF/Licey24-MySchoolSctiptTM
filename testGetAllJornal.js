@@ -25,7 +25,8 @@ let FLAG_stop_download = true
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms)); // для преостановки программы на время
 
 async function q() {
-    while (I_RAM_SAVE <= 100) { // скачиваем пока не будет 100 шт
+    console.log('скачивание запущено');
+        while (I_RAM_SAVE <= 100) { // скачиваем пока не будет 100 шт
         if (FLAG_stop_download) {
             return
         }
@@ -47,12 +48,16 @@ async function q() {
         I_PREDMET += 1;
         await find_Elemremt("table") // дожидаемся таблицу журнала
         await sleep(2000) // ждём для прогрузки цветов домиков
-        let red_home = await find_Elemremt('.d8JBiaXrvL8XVZ58xn9g')
+
+        let red_home = document.querySelectorAll('.d8JBiaXrvL8XVZ58xn9g')
         if (red_home.length>5) {
+            console.log('много красных домиков ждём 3 сек.');
+            
             await sleep(3000)
         }
-        let red_home2 = await find_Elemremt('.d8JBiaXrvL8XVZ58xn9g')
+        let red_home2 = document.querySelectorAll('.d8JBiaXrvL8XVZ58xn9g')
         if (red_home2.length>5) {
+            console.log('много красных домиков ждём 15 сек.');
             await sleep(15000)
         }
         let tablePoint = document.querySelectorAll('table'); // получаем таблицу журнала

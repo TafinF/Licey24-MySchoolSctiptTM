@@ -20,6 +20,27 @@ def get_color_by_string(input_str): # Определяем цвет домика
         return "б" # синий без ДЗ
     else:
         return "н" # серый
+def zip_list(data):
+    out_list = []
+    old_numb = 0
+    old_val = ''
+    old_date = datetime.datetime.strptime(f'01-январь-2000',"%d-%B-%Y")
+    for n,elem in enumerate(data):
+        if(old_numb==elem[2]):
+            if(old_val==elem[1]):
+                continue
+            else:
+                pass
+        if(old_date==elem[0]):
+            out_list[-1][1] = data[n-1][1]+data[n][1]
+            if(out_list[-1][1]=='рр'):
+                out_list[-1][1] = 'рс'
+            continue
+        out_list.append(elem)
+        old_numb = elem[2]
+        old_val = elem[1]
+        old_date = elem[0]
+    return out_list
 
 def get_home_list(path): # Полуйчаем данные из файла с таблицей
     with open(path, "r", encoding='UTF-8') as f:       
@@ -33,10 +54,13 @@ def get_home_list(path): # Полуйчаем данные из файла с т
             l = int(i.get('colspan', 1)) # Сколько столбцов займёт
             for a in range(l): # Вставляем столько столбцов с этим месяцем
                 list_mon.append(z)
-        list_day = ['']# лист для дней
+        list_day = [['','']]# лист для дней
         list_home_class = ['']# лист для хранения классов домиков
+        old_date = 0
         for i in rowList[2].find_all('th'): # даты с домиками, ячейки третьей строки
             z = i.find("span").text # Число (дата)
+            if (z.isdigit()):
+                old_date=old_date+1
             q = i.find('svg')['class'] # классы у домика
             t = i.find('svg').contents[0]['d'][:7] # получаем первые 7 символов пути кривой svg
             if 'M20.354' in t: # если эти символы как у перечёркнутого домика
@@ -44,12 +68,12 @@ def get_home_list(path): # Полуйчаем данные из файла с т
             l = int(i.get('colspan', 1)) # Сколько столбцов займёт
             # TODO: переделать копирование дней, оно скореее всего вносит ошибки и мешает
             for a in range(l): # Вставляем столько столбцов с этим днём
-                list_day.append(z)
+                list_day.append([z,old_date])
                 list_home_class.append(q)
         # лист месяцев длинее чем дней, добавляем недостающее для уравнивания длины
         # TODO: может проще обрезать лист месяцев
-        list_day.append('')
-        list_day.append('')
+        list_day.append(['',''])
+        list_day.append(['',''])
         list_home_class.append('')
         list_home_class.append('')
         out_list = []# выходной список
@@ -59,13 +83,13 @@ def get_home_list(path): # Полуйчаем данные из файла с т
                     year = '2024'
                 else:
                     year = '2025' 
-                date = datetime.datetime.strptime(f'{list_day[i]}-{list_mon[i]}-{year}',"%d-%B-%Y")# получаем дату из списка дня и месяца
+                date = datetime.datetime.strptime(f'{list_day[i][0]}-{list_mon[i]}-{year}',"%d-%B-%Y")# получаем дату из списка дня и месяца
                 color = get_color_by_string(''.join(list_home_class[i]))# получаем цвет домика из класса
             except:# если дата не получилась, значит это не уроки а итог, средний балл, назвние и т.д. пишем пустоту
                 date = ''
                 color = ''
 
-            out_list.append([date,color])# добавляем запись о уроке в выходной лист
+            out_list.append([date,color,list_day[i][1]])# добавляем запись о уроке в выходной лист
         #name_jornal = list_mon[0]# получаем имя журнала из первой строки первой ячейки (там и месяцы)
         out_list[0] = list_mon[0]# записываем имя журнала из первой строки первой ячейки (там и месяцы) в выходной лист
         out_list.insert(0, url.text)# добавляем в начало url этого журнала
@@ -74,7 +98,7 @@ def get_home_list(path): # Полуйчаем данные из файла с т
             out_list.pop()
         if(len(out_list)>1):
             out_list.pop()
-        return out_list
+        return zip_list(out_list)
 
 def date_range(start_date, end_date): # генерируем лист с датам в диапазоне от-до
     for n in range(int((end_date - start_date).days)):
@@ -116,7 +140,7 @@ dates.insert(0, 'Имя файла')
 
 # Указываем путь к папке, где нужно искать файлы
 folder_path = r'C:\Users\Учитель\Documents\0Code\Licey24-MySchoolSctiptTM\jornal'
-folder_path = r'C:\Users\Учитель\Documents\0Code\Licey24-MySchoolSctiptTM\1'
+folder_path = r'C:\Users\NexTouch\Documents\Code\Licey24-MySchoolSctiptTM\0'
 
 # Получаем список всех файлов с расширением .html в данной папке
 html_files = glob(os.path.join(folder_path, '*.html'))
