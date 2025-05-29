@@ -94,9 +94,9 @@ def get_home_list(path): # Полуйчаем данные из файла с т
         out_list[0] = list_mon[0]# записываем имя журнала из первой строки первой ячейки (там и месяцы) в выходной лист
         out_list.insert(0, url.text)# добавляем в начало url этого журнала
         # отрезаем лишние элементы если они есть (есть пусные журналы, там пустых не будет)
-        if(len(out_list)>1):
+        if(len(out_list)>2):
             out_list.pop()
-        if(len(out_list)>1):
+        if(len(out_list)>2):
             out_list.pop()
         return zip_list(out_list)
 
@@ -104,7 +104,9 @@ def date_range(start_date, end_date): # генерируем лист с дат�
     for n in range(int((end_date - start_date).days)):
         yield start_date + datetime.timedelta(n)
 
-def split_class(text = 'Иностранный (немецкий) язык 1-М'): # разделяем название предмета и класс
+def split_class(text): # разделяем название предмета и класс
+    if 'духовно-нравственной' in text:
+        text = text.replace("духовно-нравственной", "духовно_нравственной")
     sp_t = text.split('-')# для большинства журналов литера от буквы отделена -
     if len(sp_t)==2:# если получилось 2 куска текста, значит это этот слуяай
         sp_t[1] = sp_t[0][-1] + sp_t[1]# переносим цифру класса к букве
@@ -140,7 +142,7 @@ dates.insert(0, 'Имя файла')
 
 # Указываем путь к папке, где нужно искать файлы
 folder_path = r'C:\Users\Учитель\Documents\0Code\Licey24-MySchoolSctiptTM\jornal'
-folder_path = r'C:\Users\NexTouch\Documents\Code\Licey24-MySchoolSctiptTM\0'
+folder_path = r'C:\Users\Tafin\Documents\Code\Licey24-MySchoolSctiptTM\0'
 
 # Получаем список всех файлов с расширением .html в данной папке
 html_files = glob(os.path.join(folder_path, '*.html'))
@@ -148,6 +150,7 @@ html_files = glob(os.path.join(folder_path, '*.html'))
 out_table = []# общая таблица всех классов
 out_table.append(dates)
 # Перебираем найденные файлы и обрабатываем
+count_done = 0
 for file in html_files:
     relative_path = os.path.relpath(file, folder_path)# относительный пути он же имя файла
     data_jornal = get_home_list(file)# данные из этого файла
@@ -168,7 +171,8 @@ for file in html_files:
     newRow[1] = split_jornal_name[0] # добаляем название предмета
     newRow[0] = relative_path # добавляем название файла сохранения
     out_table.append(newRow) # добаляем строку в таблицу
-            
+    count_done+=1
+    print(count_done, end="\r")
 
 def save_array_to_file(array, filename):
     out_str  = ''
