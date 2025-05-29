@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         Test My School Color Point
+// @name         My School Color Point
 // @namespace    http://tampermonkey.net/
 // @version      2025-05-29
 // @description  Окрашивает оценки в разные цвета в Моя Школа
