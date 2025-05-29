@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         My School Color Point
 // @namespace    http://tampermonkey.net/
-// @version      2025-05-29
+// @version      2025-05-29 v2
 // @description  Окрашивает оценки в разные цвета в Моя Школа
 // @author       Tafintsev Feodor taf.f11@ya.ru
 // @match        https://authedu.mosreg.ru/teacher/study-process/journal/*
@@ -9,8 +9,10 @@
 // @grant        none
 // ==/UserScript==
 
+let CLASS_ADD_NAME = 'lic24color' //имя класса для добавления покрашенным элементам
 let OUT_STR_COLORIZE_TYPE; // строка для отображения типа выбранного округления
 let OUT_STR_TRIMESTR_INFO; // строка с информайией о количестве уроков в триместре и нужном количестве оценок для атестации
+let IS_MATH_ROUND = false;
 let WATCH_ELEMENT; // заголовок журнала за которым следим для определения смены таблицы
 let WRONG_JOURNAL_LIST = [// список журналов в которых округление математическое
     'Изобразительное искусство',
@@ -65,8 +67,8 @@ function getHim() { // поиск таблицы журнала
     }
     else {
         console.log('Таблица найдена');
-        let f = isMathRoundType(WATCH_ELEMENT.textContent)
-        colorizeTable(tablePoint[0].lastChild, f)
+        IS_MATH_ROUND = isMathRoundType(WATCH_ELEMENT.textContent)
+        colorizeTable(tablePoint[0].lastChild)
         StartWatch()
     }
 }
@@ -172,6 +174,7 @@ function Color_point_cell(cellNode) {
     let colorCell = Color_selection(point)
     if (colorCell != null) {
         cellNode.style.background = 'linear-gradient(225deg,transparent,' + colorCell + ' 70%)'
+        cellNode.classList.add(CLASS_ADD_NAME);
         return point
     }
     return null
@@ -179,7 +182,7 @@ function Color_point_cell(cellNode) {
 /**
  * Определяет, является ли данная ячейка итоговой оценкой.
  * @param {element} cellNode - ячейка с оценкой.
- * @returns {boolean} 
+ * @returns {boolean}
  */
 function Is_final_point(cellNode) {
     if (cellNode.hasAttribute('data-test-component')) {
@@ -199,10 +202,12 @@ function colorFinalPointSell(cellNode, allPoint, is_we_need_3_grades) {
     let neadPoint = is_we_need_3_grades ? 3 : 5 // определяем сколько нужно оценок для атестации
     if (neadPoint > allPoint.length) { // если оценок меньше, красим в красный низ ячейки
         cellNode.style.background = 'linear-gradient(180deg,transparent 70%, #FF9999)'
+        cellNode.classList.add(CLASS_ADD_NAME);
         return
     }
     if (allPoint.at(-1) == '2') { // если последняя оценка 2, красим в красный низ ячейки
         cellNode.style.background = 'linear-gradient(180deg,transparent 70%, #FF9999)'
+        cellNode.classList.add(CLASS_ADD_NAME);
         return
     }
     if (!cellNode.hasChildNodes()) { return } // если ячейка пустая не красим
@@ -210,51 +215,109 @@ function colorFinalPointSell(cellNode, allPoint, is_we_need_3_grades) {
     let colorCell = Color_selection(point) // получаем код цвета
     if (colorCell != null) { // если код получен, красим
         cellNode.style.backgroundColor = colorCell
+        cellNode.classList.add(CLASS_ADD_NAME);
     }
 }
+function colorizeStandartRow(rouNode, is_need_3_grades) {
+    /** массив всех оценок*/
+    let pointList = []
+    if (rouNode.childNodes.length < 2) { return }// пропускаем пустые строки таблицы, возможно можно только первую
 
+    for (let j = 1; j < rouNode.childNodes.length - 1; j++) {// пробегаем по ячейкам с оценками
+        let cellNode = rouNode.childNodes[j].firstChild //ячейка строки
+        if (Is_final_point(cellNode)) { // занимаемся последней ячейкой с итоговой оценкой, и первой с именем/прогресбаром
+            colorFinalPointSell(cellNode, pointList, is_need_3_grades)
+            rouNode.firstChild.style.background = genGradPointCount(pointList.length, is_need_3_grades) // красим имя в прогресбар по количеству оценок
+            rouNode.firstChild.classList.add(CLASS_ADD_NAME);
+            continue
+        }
+        let currentPoint = Color_point_cell(cellNode) // красим ячейку и получаем ту оценку которая там была
+        if (currentPoint != null) { pointList.push(currentPoint) } // если получили, записываем в массив
+    }
+    let itogPointItem = rouNode.childNodes[rouNode.childNodes.length - 1].firstChild // получаем средний балл
+    let point = parseFloat(itogPointItem.firstChild.textContent.replace(",", '.'))// переводим в число
+    let color // определям цвет по правилам округления
+    if (IS_MATH_ROUND) {
+        if (point >= 4.5) { color = Colors.GREEN }
+        else if (point >= 3.5) { color = Colors.BLUE }
+        else if (point >= 2.5) { color = Colors.YELLOW }
+        else if (point < 2.5) { color = Colors.RED }
+
+    } else {
+        if (point >= 4.65) { color = Colors.GREEN }
+        else if (point >= 3.6) { color = Colors.BLUE }
+        else if (point >= 2.6) { color = Colors.YELLOW }
+        else if (point < 2.6) { color = Colors.RED }
+    }
+    itogPointItem.parentNode.style.backgroundColor = color // красим среднийи бал
+    itogPointItem.parentNode.classList.add(CLASS_ADD_NAME);
+}
+function colorizeItoRow(rouNode) {
+    /** массив всех оценок*/
+    let pointList = []
+    if (rouNode.childNodes.length < 2) { return }// пропускаем пустые строки таблицы, возможно можно только первую
+
+    for (let j = 1; j < rouNode.childNodes.length - 1; j++) {// пробегаем по ячейкам с оценками
+        let cellNode = rouNode.childNodes[j].firstChild //ячейка строки
+        if (Is_final_point(cellNode)) { // занимаемся последней ячейкой с итоговой оценкой, и первой с именем/прогресбаром
+            if (!cellNode.hasChildNodes()) { continue }// если есть оценка в ячейке (или н-ка)
+            let point = cellNode.firstChild.textContent
+            let colorCell = Color_selection(point)
+            if (colorCell != null) {
+                cellNode.style.backgroundColor = colorCell
+                cellNode.classList.add(CLASS_ADD_NAME);
+                pointList.push(point)
+            }
+        }
+        if (cellNode.hasAttribute('data-test-component')) {
+            if (cellNode.getAttribute('data-test-component').includes('yearResult')) {
+                if (!cellNode.hasChildNodes()) { continue }// если есть оценка в ячейке (или н-ка)
+                let point = cellNode.firstChild.textContent
+                let colorCell = Color_selection(point)
+                if (colorCell != null) {
+                    cellNode.style.backgroundColor = colorCell
+                    cellNode.classList.add(CLASS_ADD_NAME);
+                    pointList.push(point)
+                }
+             }
+        }
+
+    }
+    let itogPointItem = rouNode.childNodes[rouNode.childNodes.length - 1].firstChild // получаем средний балл
+    let point = (Number(pointList[0]) + Number(pointList[1]) + Number(pointList[2])) / 3
+    let color // определям цвет по правилам округления
+    if (point >= 4.5) { color = Colors.GREEN }
+    else if (point >= 3.5) { color = Colors.BLUE }
+    else if (point >= 2.5) { color = Colors.YELLOW }
+    else if (point < 2.5) { color = Colors.RED }
+
+    itogPointItem.parentNode.style.backgroundColor = color // красим среднийи бал
+    itogPointItem.parentNode.classList.add(CLASS_ADD_NAME);
+}
 // градиент с индикатором для ср. бала linear-gradient(to right, lime 15%, var(--LM-neutrals-day-300) 15% 17%, cyan 12% 100%)
-function colorizeTable(tableBody, isMathRound = false) {
+function colorizeTable(tableBody) {
+    let oldColorElem = tableBody.querySelectorAll('.' + CLASS_ADD_NAME);
+    oldColorElem.forEach(element => {
+        element.style.removeProperty("background-color");
+        element.style.removeProperty('background');
+        element.classList.remove(CLASS_ADD_NAME)
+    });
+    let elements = document.querySelector('.FDJEFXkDpWhBLZDxnInU.hGtB0oSuryeRiAS2J57Y.Qp8HUr00NXY26hlHOZwb.cbtxLJutW4h15oSu11WO.IfMLW0irD86BmgWhT8FP.C0qHlb4C7fAcYrnlODD0.false.NxJu2UTTgygYiAOvhTvC.IFkWdTtYw_C_ncCuZmUF.Cb3mMUc4RqGu4myaBrNy');
+    let titl = elements.getAttribute('title');
+    if (titl == 'Режим отображения итоговых отметок') {
+        for (let i = 0; i < tableBody.childNodes.length; i++) { // проходим по строкам таблицу
+            colorizeItoRow(tableBody.childNodes[i])
+        }
+        return
+    }
+
     let coutLessons = tableBody.childNodes[2].childNodes.length - 3 // количество уроков
     let is_need_3_grades = coutLessons < 15 // если уроков меньше 15, то для атестации будет достаточно 3-х оценок
     OUT_STR_TRIMESTR_INFO = `Уроков в триместре: ${coutLessons}\nОценок за триметр должнобыть не менее: ${is_need_3_grades ? 3 : 5}` // уведомляем в консоль
     console.log(OUT_STR_TRIMESTR_INFO);
 
     for (let i = 0; i < tableBody.childNodes.length; i++) { // проходим по строкам таблицу
-        /** строки таблицы*/
-        let rouNode = tableBody.childNodes[i]
-        /** массив всех оценок*/
-        let pointList = []
-        if (rouNode.childNodes.length < 2) { continue }// пропускаем пустые строки таблицы, возможно можно только первую
-
-        for (let j = 1; j < rouNode.childNodes.length - 1; j++) {// пробегаем по ячейкам с оценками
-            let cellNode = rouNode.childNodes[j].firstChild //ячейка строки
-            if (Is_final_point(cellNode)) { // занимаемся последней ячейкой с итоговой оценкой, и первой с именем/прогресбаром
-                colorFinalPointSell(cellNode, pointList, is_need_3_grades)
-                rouNode.firstChild.style.background = genGradPointCount(pointList.length, is_need_3_grades) // красим имя в прогресбар по количеству оценок
-                continue
-            }
-            let currentPoint = Color_point_cell(cellNode) // красим ячейку и получаем ту оценку которая там была
-            if (currentPoint != null) { pointList.push(currentPoint) } // если получили, записываем в массив
-        }
-
-        let itogPointItem = rouNode.childNodes[rouNode.childNodes.length - 1].firstChild // получаем средний балл
-        let point = parseFloat(itogPointItem.firstChild.textContent.replace(",", '.'))// переводим в число
-        let color // определям цвет по правилам округления
-        if (isMathRound) {
-            if (point >= 4.5) { color = Colors.GREEN }
-            else if (point >= 3.5) { color = Colors.BLUE }
-            else if (point >= 2.5) { color = Colors.YELLOW }
-            else if (point < 2.5) { color = Colors.RED }
-
-        } else {
-            if (point >= 4.65) { color = Colors.GREEN }
-            else if (point >= 3.6) { color = Colors.BLUE }
-            else if (point >= 2.6) { color = Colors.YELLOW }
-            else if (point < 2.6) { color = Colors.RED }
-        }
-        itogPointItem.parentNode.style.backgroundColor = color // красим среднийи бал
-
+        colorizeStandartRow(tableBody.childNodes[i], is_need_3_grades)
     }
 }
 function downloadAsFile() {
