@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Test My School Color Point 3
+// @name         Test My School Color Point
 // @namespace    http://tampermonkey.net/
-// @version      2025-02-02
+// @version      2025-05-29
 // @description  Окрашивает оценки в разные цвета в Моя Школа
 // @author       Tafintsev Feodor taf.f11@ya.ru
 // @match        https://authedu.mosreg.ru/teacher/study-process/journal/*
