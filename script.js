@@ -9,18 +9,25 @@
 // @grant        none
 // ==/UserScript==
 
-let CLASS_ADD_NAME = 'lic24color' //имя класса для добавления покрашенным элементам
-let OUT_STR_COLORIZE_TYPE; // строка для отображения типа выбранного округления
-let OUT_STR_TRIMESTR_INFO; // строка с информайией о количестве уроков в триместре и нужном количестве оценок для атестации
+/** имя класса для добавления покрашенным элементам*/
+const CLASS_ADD_NAME = 'lic24color'
+/** строка для отображения типа выбранного округления*/
+let OUT_STR_COLORIZE_TYPE;
+/** строка с информайией о количестве уроков в триместре и нужном количестве оценок для атестации*/
+let OUT_STR_TRIMESTR_INFO;
+/**  Флаг о необходимости применения математического округления*/
 let IS_MATH_ROUND = false;
-let WATCH_ELEMENT; // заголовок журнала за которым следим для определения смены таблицы
-let WRONG_JOURNAL_LIST = [// список журналов в которых округление математическое
+/** заголовок журнала за которым следим для определения смены таблицы */
+let WATCH_ELEMENT;
+/** список журналов в которых округление математическое*/
+const WRONG_JOURNAL_LIST = [
     'Изобразительное искусство',
     'Музыка',
     'Труд',
     'Физическая культура'
 ];
-const Colors = { // цвета ячеек
+/** цвета для ячеек*/
+const Colors = {
     RED: ' #FF9999',
     YELLOW: ' #FFFFCC',
     BLUE: ' #99CCFF',
@@ -59,6 +66,12 @@ function StartWatch() { //начинает следить за изменени�
     });
 }
 
+
+let TABLE_observer = new MutationObserver((mutationsList, observer) => {
+    getHim()
+});
+
+
 function getHim() { // поиск таблицы журнала
     let tablePoint = document.querySelectorAll('table'); // получаем таблицу журнала
     if (tablePoint.length == 0) {
@@ -70,6 +83,8 @@ function getHim() { // поиск таблицы журнала
         IS_MATH_ROUND = isMathRoundType(WATCH_ELEMENT.textContent)
         colorizeTable(tablePoint[0].lastChild)
         StartWatch()
+        TABLE_observer.disconnect();
+        TABLE_observer.observe(document.querySelector('main'), { childList: true, subtree: true });
     }
 }
 
@@ -279,7 +294,7 @@ function colorizeItoRow(rouNode) {
                     cellNode.classList.add(CLASS_ADD_NAME);
                     pointList.push(point)
                 }
-             }
+            }
         }
 
     }
@@ -333,26 +348,27 @@ window.onload = function () { insertButton(); };
 
 
 
-// // Создаем наблюдатель изменений DOM-элементов
-// const observer = new MutationObserver((mutationsList, observer) => {
-//     for (const mutation of mutationsList) {
-//         if (mutation.type === 'childList') {
-//             // Проверяем наличие новых узлов с нужными классами
-//             let newNodes = Array.from(mutation.addedNodes);
-//             newNodes.forEach(node => {
-//                 if (node.classList.contains('zGtSdhndEVAwp_Wmlido') && node.classList.contains('MuiPopper-root')) {
-//                     let atr = node.getAttribute('data-test-component')
-//                     if (atr.includes('markCellAlteration')) {
-//                         console.log(`панелька появилась`, node);
-//                     }
+
+// Создаем наблюдатель изменений DOM-элементов
+const observer = new MutationObserver((mutationsList, observer) => {
+    for (const mutation of mutationsList) {
+        if (mutation.type === 'childList') {
+            // Проверяем наличие новых узлов с нужными классами
+            let newNodes = Array.from(mutation.addedNodes);
+            newNodes.forEach(node => {
+                if (node.classList.contains('zGtSdhndEVAwp_Wmlido') && node.classList.contains('MuiPopper-root')) {
+                    let atr = node.getAttribute('data-test-component')
+                    if (atr.includes('markCellAlteration')) {
+                        console.log(`панелька появилась`, node);
+                    }
 
 
-//                     // Можно добавить дополнительные действия при появлении элемента
-//                 }
-//             });
-//         }
-//     }
-// });
+                    // Можно добавить дополнительные действия при появлении элемента
+                }
+            });
+        }
+    }
+});
 
-// // Конфигурация наблюдения — проверяем новые узлы
-// observer.observe(document.body, { childList: true });
+// Конфигурация наблюдения — проверяем новые узлы
+observer.observe(document.body, { childList: true });
