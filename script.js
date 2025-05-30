@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         My School Color Point
 // @namespace    http://tampermonkey.net/
-// @version      2025-05-29 v2
+// @version      2025-05-30
 // @description  Окрашивает оценки в разные цвета в Моя Школа
 // @author       Tafintsev Feodor taf.f11@ya.ru
 // @match        https://authedu.mosreg.ru/teacher/study-process/journal/*
@@ -9,21 +9,28 @@
 // @grant        none
 // ==/UserScript==
 
-let CLASS_ADD_NAME = 'lic24color' //имя класса для добавления покрашенным элементам
-let OUT_STR_COLORIZE_TYPE; // строка для отображения типа выбранного округления
-let OUT_STR_TRIMESTR_INFO; // строка с информайией о количестве уроков в триместре и нужном количестве оценок для атестации
+/** имя класса для добавления покрашенным элементам*/
+const CLASS_ADD_NAME = 'lic24color'
+/** строка для отображения типа выбранного округления*/
+let OUT_STR_COLORIZE_TYPE;
+/** строка с информайией о количестве уроков в триместре и нужном количестве оценок для атестации*/
+let OUT_STR_TRIMESTR_INFO;
+/**  Флаг о необходимости применения математического округления*/
 let IS_MATH_ROUND = false;
-let WATCH_ELEMENT; // заголовок журнала за которым следим для определения смены таблицы
-let WRONG_JOURNAL_LIST = [// список журналов в которых округление математическое
+/** заголовок журнала за которым следим для определения смены таблицы */
+let WATCH_ELEMENT;
+/** список журналов в которых округление математическое*/
+const WRONG_JOURNAL_LIST = [
     'Изобразительное искусство',
     'Музыка',
     'Труд',
     'Физическая культура'
 ];
-const Colors = { // цвета ячеек
+/** цвета для ячеек*/
+const Colors = {
     RED: ' #FF9999',
     YELLOW: ' #FFFFCC',
-    BLUE: ' #99CCFF',
+    BLUE: ' #c2e0ff',
     GREEN: ' #CCFFCC'
 };
 
@@ -59,6 +66,12 @@ function StartWatch() { //начинает следить за изменени�
     });
 }
 
+
+let TABLE_observer = new MutationObserver((mutationsList, observer) => {
+    getHim()
+});
+
+
 function getHim() { // поиск таблицы журнала
     let tablePoint = document.querySelectorAll('table'); // получаем таблицу журнала
     if (tablePoint.length == 0) {
@@ -70,6 +83,8 @@ function getHim() { // поиск таблицы журнала
         IS_MATH_ROUND = isMathRoundType(WATCH_ELEMENT.textContent)
         colorizeTable(tablePoint[0].lastChild)
         StartWatch()
+        TABLE_observer.disconnect();
+        TABLE_observer.observe(document.querySelector('main'), { childList: true, subtree: true });
     }
 }
 
@@ -279,7 +294,7 @@ function colorizeItoRow(rouNode) {
                     cellNode.classList.add(CLASS_ADD_NAME);
                     pointList.push(point)
                 }
-             }
+            }
         }
 
     }
@@ -330,6 +345,7 @@ function downloadAsFile() {
     a.remove()
 }
 window.onload = function () { insertButton(); };
+
 
 
 
