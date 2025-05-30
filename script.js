@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Test My School Color Point 3
 // @namespace    http://tampermonkey.net/
-// @version      2025-02-02
+// @version      2025-06-02
 // @description  Окрашивает оценки в разные цвета в Моя Школа
 // @author       Tafintsev Feodor taf.f11@ya.ru
 // @match        https://authedu.mosreg.ru/teacher/study-process/journal/*
@@ -9,6 +9,8 @@
 // @grant        none
 // ==/UserScript==
 
+const CLASS_DIV_BUTT = 'lic24divbut'
+let Serch_Table = false;
 /** имя класса для добавления покрашенным элементам*/
 const CLASS_ADD_NAME = 'lic24color'
 /** строка для отображения типа выбранного округления*/
@@ -30,45 +32,36 @@ const WRONG_JOURNAL_LIST = [
 const Colors = {
     RED: ' #FF9999',
     YELLOW: ' #FFFFCC',
-    BLUE: ' #99CCFF',
+    BLUE: ' #c2e0ff',
     GREEN: ' #CCFFCC'
 };
 
-let MUTATION_OBSERVER = new MutationObserver(mutationCallback);
-
-function mutationCallback() {
-    console.log("Возможно, таблица пропала. Запускаем поиск");
-    MUTATION_OBSERVER.disconnect();
-    setTimeout(getHim, 2000);
-};
 
 function isMathRoundType(nameJornal) { //определяет нужно ли применять математическое округление или использовать Лицейское
     // проверяем есть ли в названии текущего журнала слова из списка журналов в которых применяется математическое округление
     for (let i = 0; i < WRONG_JOURNAL_LIST.length; i++) {
         if (nameJornal.includes(WRONG_JOURNAL_LIST[i])) {
             OUT_STR_COLORIZE_TYPE = 'Выбран метод оценивания по правилам математики (0.5)'
-            console.log(OUT_STR_COLORIZE_TYPE);
+           // console.log(OUT_STR_COLORIZE_TYPE);
             return true
         }
     }
     OUT_STR_COLORIZE_TYPE = 'Выбран метод оценивания по правилам лицея (0.65)'
-    console.log(OUT_STR_COLORIZE_TYPE);
+   // console.log(OUT_STR_COLORIZE_TYPE);
     return false
 }
-function StartWatch() { //начинает следить за изменением элемента с названием журнала
-    MUTATION_OBSERVER.observe(WATCH_ELEMENT, {
-        attributes: true,
-        characterData: true,
-        childList: true,
-        subtree: true,
-        attributeOldValue: true,
-        characterDataOldValue: true
-    });
-}
-
+window.addEventListener('hashchange', function() {
+  console.log('Ура, хэш изменился!:', location.hash);
+});
 
 let TABLE_observer = new MutationObserver((mutationsList, observer) => {
-    getHim()
+    if(!Serch_Table){
+        getHim()
+        //let elem = document.querySelector('.'+CLASS_DIV_BUTT);
+        //if (elem != null){insertButton()}
+       // else(getHim())
+    }
+    Serch_Table=true
 });
 
 
@@ -80,11 +73,11 @@ function getHim() { // поиск таблицы журнала
     }
     else {
         console.log('Таблица найдена');
+        Serch_Table=false
         IS_MATH_ROUND = isMathRoundType(WATCH_ELEMENT.textContent)
         colorizeTable(tablePoint[0].lastChild)
-        StartWatch()
         TABLE_observer.disconnect();
-        TABLE_observer.observe(document.querySelector('main'), { childList: true, subtree: true });
+        TABLE_observer.observe(document.querySelector('main').parentNode, { childList: true, subtree: true });
     }
 }
 
@@ -113,6 +106,7 @@ function insertButton() { // вставка кнопок управления
         background: lightgrey;}`;
         document.head.appendChild(styleEl);
         let di = document.createElement('div');
+        di.classList.add(CLASS_DIV_BUTT)
         di.style.cssText = 'box-shadow: 1px 1px 4px 0px rgba(0, 0, 0, 0.07); border-radius: 8px;';
         let bu = document.createElement('button'); // кнопка принудительной покраски
         bu.style.cssText = 'border-radius: 8px 0 0 8px;';
@@ -329,7 +323,7 @@ function colorizeTable(tableBody) {
     let coutLessons = tableBody.childNodes[2].childNodes.length - 3 // количество уроков
     let is_need_3_grades = coutLessons < 15 // если уроков меньше 15, то для атестации будет достаточно 3-х оценок
     OUT_STR_TRIMESTR_INFO = `Уроков в триместре: ${coutLessons}\nОценок за триметр должнобыть не менее: ${is_need_3_grades ? 3 : 5}` // уведомляем в консоль
-    console.log(OUT_STR_TRIMESTR_INFO);
+    //console.log(OUT_STR_TRIMESTR_INFO);
 
     for (let i = 0; i < tableBody.childNodes.length; i++) { // проходим по строкам таблицу
         colorizeStandartRow(tableBody.childNodes[i], is_need_3_grades)
