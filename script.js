@@ -47,12 +47,12 @@ function isMathRoundType(nameJornal) { //определяет нужно ли п
     for (let i = 0; i < WRONG_JOURNAL_LIST.length; i++) {
         if (nameJornal.includes(WRONG_JOURNAL_LIST[i])) {
             OUT_STR_COLORIZE_TYPE = 'Выбран метод оценивания по правилам математики (0.5)'
-            console.log(OUT_STR_COLORIZE_TYPE);
+            // console.log(OUT_STR_COLORIZE_TYPE);
             return true
         }
     }
     OUT_STR_COLORIZE_TYPE = 'Выбран метод оценивания по правилам лицея (0.65)'
-    console.log(OUT_STR_COLORIZE_TYPE);
+    // console.log(OUT_STR_COLORIZE_TYPE);
     return false
 }
 function StartWatch() { //начинает следить за изменением элемента с названием журнала
@@ -207,6 +207,25 @@ function Is_final_point(cellNode) {
     }
     return false
 }
+
+/**
+ * Раскрашивает ячейку с двойкой.
+ * @param {element} cellNode - ячейка с оценкой.
+ * @returns {string} Оценка или null.
+ */
+function Color_dvoika_cell(cellNode) {
+    if (!cellNode.hasChildNodes()) { return null }// если есть оценка в ячейке (или н-ка)
+    let point = cellNode.firstChild.textContent
+    let colorCell = Color_selection(point)
+    if (colorCell != null) {
+        cellNode.style.background = ''
+        cellNode.style.backgroundColor = '#ff0000ff'
+        cellNode.classList.add(CLASS_ADD_NAME);
+        return point
+    }
+    return null
+}
+
 /**
  * Окрашивает ячейку итоговой оценки.
  * @param {element} cellNode - ячейка с оценкой.
@@ -236,6 +255,7 @@ function colorFinalPointSell(cellNode, allPoint, is_we_need_3_grades) {
 function colorizeStandartRow(rouNode, is_need_3_grades) {
     /** массив всех оценок*/
     let pointList = []
+    let dvoiki = []
     if (rouNode.childNodes.length < 2) { return }// пропускаем пустые строки таблицы, возможно можно только первую
 
     for (let j = 1; j < rouNode.childNodes.length - 1; j++) {// пробегаем по ячейкам с оценками
@@ -247,7 +267,20 @@ function colorizeStandartRow(rouNode, is_need_3_grades) {
             continue
         }
         let currentPoint = Color_point_cell(cellNode) // красим ячейку и получаем ту оценку которая там была
-        if (currentPoint != null) { pointList.push(currentPoint) } // если получили, записываем в массив
+
+        if (currentPoint != null) {
+            //если оценка 2 добавляем в массив
+            if (currentPoint == '2') {
+                dvoiki.push(cellNode);
+                if (dvoiki.length >= 3) { // если двоек 3 подряд то красим все в красный
+                    dvoiki.forEach(Color_dvoika_cell)
+                }
+            }
+            else {// если двойки подряд кончились то обнуляем списко
+                dvoiki = []
+            }
+            pointList.push(currentPoint)// если получили, записываем в массив
+        } 
     }
     let itogPointItem = rouNode.childNodes[rouNode.childNodes.length - 1].firstChild // получаем средний балл
     let point = parseFloat(itogPointItem.firstChild.textContent.replace(",", '.'))// переводим в число
@@ -329,7 +362,7 @@ function colorizeTable(tableBody) {
     let coutLessons = tableBody.childNodes[2].childNodes.length - 3 // количество уроков
     let is_need_3_grades = coutLessons < 15 // если уроков меньше 15, то для атестации будет достаточно 3-х оценок
     OUT_STR_TRIMESTR_INFO = `Уроков в триместре: ${coutLessons}\nОценок за триметр должнобыть не менее: ${is_need_3_grades ? 3 : 5}` // уведомляем в консоль
-    console.log(OUT_STR_TRIMESTR_INFO);
+    // console.log(OUT_STR_TRIMESTR_INFO);
 
     for (let i = 0; i < tableBody.childNodes.length; i++) { // проходим по строкам таблицу
         colorizeStandartRow(tableBody.childNodes[i], is_need_3_grades)
