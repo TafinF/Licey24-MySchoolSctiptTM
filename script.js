@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         My School Color Point
 // @namespace    http://tampermonkey.net/
-// @version      2025-11-12
+// @version      2025-11-15
 // @description  Окрашивает оценки в разные цвета в Моя Школа
 // @author       Tafintsev Feodor taf.f11@ya.ru
 // @match        https://authedu.mosreg.ru/teacher/study-process/journal/*
@@ -93,6 +93,23 @@ let TABLE_observer = new MutationObserver((mutationsList, observer) => {
 });
 
 /**
+ * Считаем сколько уроков в треместре по заголовку таблицы
+ */
+function countLessonsInTrimestr(tableHead) {
+    const lessons = new Set();
+    const lessonCells = tableHead.querySelectorAll('[data-test-component^="scheduleLessonCell"]');
+    
+    lessonCells.forEach(cell => {
+        const lessonId = cell.getAttribute('data-test-component').split('-')[1];
+        lessons.add(lessonId);
+    });
+    
+    return lessons.size;
+}
+
+
+
+/**
  * Основная функция поиска и обработки таблицы журнала
  */
 function getHim() {
@@ -104,6 +121,9 @@ function getHim() {
     else {
         console.log('Таблица найдена');
         JOURNAL_INFO.isMathRound = isMathRoundType(WATCH_ELEMENT.textContent)
+        
+        JOURNAL_INFO.countLessons = countLessonsInTrimestr(tablePoint[0].firstChild)// количество уроков
+        JOURNAL_INFO.isWeNeed3Grades = JOURNAL_INFO.countLessons < 15 // если уроков меньше 15, то для атестации будет достаточно 3-х оценок
         colorizeTable(tablePoint[0].lastChild)
         StartWatch()
         TABLE_observer.disconnect();
@@ -424,8 +444,8 @@ function colorizeTable(tableBody) {
 
     // Обычный режим - рассчитываем количество уроков и необходимые оценки
     // let coutLessons = tableBody.childNodes[2].childNodes.length - 3 // количество уроков
-    JOURNAL_INFO.countLessons = tableBody.childNodes[2].childNodes.length - 3 // количество уроков
-    JOURNAL_INFO.isWeNeed3Grades = JOURNAL_INFO.countLessons < 15 // если уроков меньше 15, то для атестации будет достаточно 3-х оценок
+    // JOURNAL_INFO.countLessons = tableBody.childNodes[2].childNodes.length - 3 // количество уроков
+    // JOURNAL_INFO.isWeNeed3Grades = JOURNAL_INFO.countLessons < 15 // если уроков меньше 15, то для атестации будет достаточно 3-х оценок
     // OUT_STR_TRIMESTR_INFO = `Уроков в триместре: ${coutLessons}\nОценок за триметр должнобыть не менее: ${is_need_3_grades ? 3 : 5}` // уведомляем в консоль
     // console.log(OUT_STR_TRIMESTR_INFO);
 
