@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         My School Color Point
 // @namespace    http://tampermonkey.net/
-// @version      2025-11-18
+// @version      2025-12-08
 // @description  Окрашивает оценки в разные цвета в Моя Школа
 // @author       Tafintsev Feodor taf.f11@ya.ru
 // @match        https://authedu.mosreg.ru/*
@@ -109,26 +109,26 @@ function genGradPointCount(count, is_we_need_3_grades) {
     if (is_we_need_3_grades) { // если нам нужно только 3 оценки для атестации
         switch (count) {
             case 0:
-                return 'linear-gradient(to left,var(--LM-neutrals-day-0))'
+                return 'linear-gradient(to left,#ffffff)'
             case 1:
-                return 'linear-gradient(to left, var(--LM-neutrals-day-0) 66%, #fccfd3 0%)'
+                return 'linear-gradient(to left, #ffffff 66%, #fccfd3 0%)'
             case 2:
-                return 'linear-gradient(to left, var(--LM-neutrals-day-0) 33%, #fdd9b5 0%)'
+                return 'linear-gradient(to left, #ffffff 33%, #fdd9b5 0%)'
             default:
                 return 'linear-gradient(to left,  #CCFFCC)'
         }
     } else { // если нам нужно 5 оценок для атестации
         switch (count) {
             case 0:
-                return 'linear-gradient(to left,var(--LM-neutrals-day-0))'
+                return 'linear-gradient(to left,#ffffff)'
             case 1:
-                return 'linear-gradient(to left, var(--LM-neutrals-day-0) 80%, #fccfd3 0%)'
+                return 'linear-gradient(to left, #ffffff 80%, #fccfd3 0%)'
             case 2:
-                return 'linear-gradient(to left, var(--LM-neutrals-day-0) 60%, #fccfd3 0%)'
+                return 'linear-gradient(to left, #ffffff 60%, #fccfd3 0%)'
             case 3:
-                return 'linear-gradient(to left, var(--LM-neutrals-day-0) 40%, #fccfd3 0%)'
+                return 'linear-gradient(to left, #ffffff 40%, #fccfd3 0%)'
             case 4:
-                return 'linear-gradient(to left, var(--LM-neutrals-day-0) 20%, #fdd9b5 0%)'
+                return 'linear-gradient(to left, #ffffff 20%, #fdd9b5 0%)'
             default:
                 return 'linear-gradient(to left,  #CCFFCC)'
         }
@@ -826,7 +826,7 @@ function createModalWindow() {
     // Стили для текста настроек
     setting1Text.textContent = 'Цветной режим (в разработке...)';
     setting2Text.textContent = 'Подсветка пограничных оценок (в разработке...)';
-    setting3Text.textContent = 'Выключать средний балл (работает)' ;
+    setting3Text.textContent = 'Выключать столбец средний балл (работает)' ;
 
     const textStyle = {
         fontSize: '14px',
