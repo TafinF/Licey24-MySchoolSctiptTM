@@ -1,8 +1,7 @@
-// File: 0_script.js
 // ==UserScript==
 // @name         My School Color Point
 // @namespace    http://tampermonkey.net/
-// @version      2025-12-08
+// @version      2026-02-15_19-54-56
 // @description  Окрашивает оценки в разные цвета в Моя Школа
 // @author       Tafintsev Feodor taf.f11@ya.ru
 // @match        https://authedu.mosreg.ru/*
@@ -10,535 +9,1359 @@
 // @grant        none
 // ==/UserScript==
 
-/** имя класса для добавления покрашенным элементам*/
-const CLASS_ADD_NAME = 'lic24color'
-/** ключ локалсторажд для хранния настроек надстройки */
-const MAIN_KEY = "MSCP"
+/**
+ * ============================================================================
+ * ФАЙЛ: config.js
+ * 
+ * Назначение: Все константы и конфигурация скрипта
+ * ============================================================================
+ */
 
-let JOURNAL_INFO = {
-    isMathRound: false,
-    isWeNeed3Grades: false,
-    countLessons: 0
-}
+/**
+ * Версия скрипта
+ * Используется в Tampermonkey и отображается в меню настроек
+ * Подставляется автоматически при сборке из build.sh
+ */
+const VERSION = '2026-02-15_19-54-56';
 
-/** заголовок журнала за которым следим для определения смены таблицы */
-let WATCH_ELEMENT;
-/** список журналов в которых округление математическое*/
-const WRONG_JOURNAL_LIST = [
-    'Изобразительное искусство',
-    'Музыка',
-    'Труд',
-    'Физическая культура'
-];
-/** цвета для ячеек*/
-const Colors = {
-    RED: ' #FF9999',
-    YELLOW: ' #FFFFCC',
-    BLUE: ' #c2e0ff',
-    GREEN: ' #CCFFCC'
+/**
+ * Основная конфигурация скрипта
+ * Содержит все настраиваемые параметры в одном месте
+ */
+const CONFIG = {
+    /** Префикс для всех CSS-классов окрашивания */
+    CLASS_PREFIX: 'mscp',
+    
+    /** Ключ для хранения настроек в localStorage */
+    STORAGE_KEY: 'MSCP',
+    
+    /** 
+     * Список предметов с математическим округлением (вместо лицейского)
+     * Математическое: 4.5 → 5, Лицейское: 4.65 → 5
+     */
+    MATH_ROUND_SUBJECTS: [
+        'Изобразительное искусство',
+        'Музыка',
+        'Труд',
+        'Физическая культура'
+    ],
+    
+    /** CSS-селекторы для поиска элементов на странице */
+    SELECTORS: {
+        MODAL_TRIGGER: '.FDJEFXkDpWhBLZDxnInU.hGtB0oSuryeRiAS2J57Y.Qp8HUr00NXY26hlHOZwb.cbtxLJutW4h15oSu11WO.IfMLW0irD86BmgWhT8FP.C0qHlb4C7fAcYrnlODD0.false.NxJu2UTTgygYiAOvhTvC.IFkWdTtYw_C_ncCuZmUF.Cb3mMUc4RqGu4myaBrNy',
+        PARENT_BUTTON_CONTAINER: '[data-test-component="undefined-subheaderTitle-titleContainer"]',
+        MAIN_SECTION: 'main',
+        JOURNAL_TABLE: 'table',
+        LESSON_CELL: '[data-test-component^="scheduleLessonCell"]'
+    },
+    
+    /** URL-паттерн для страниц журнала */
+    URL_PATTERN: /^https:\/\/authedu\.mosreg\.ru\/teacher\/study-process\/journal\/(?:grade|my)\/[0-9]+(\?.*)?$/,
+    
+    /**
+     * Настройки подсветки форм контроля
+     */
+    CONTROL_FORMS: {
+        /** CSS-класс для поиска span элементов в thead */
+        SPAN_CLASS: '.DSXOGdoSiFGKohRuaDDx.ebIBbAN3ZomwnCMWP167._ELGiVRWaoZZRQLlT7eO.LqxH9tRjFX8eUgojIkc1.p2N_yf8k6HEnunN8Zt12.E8taxZlPjqlq_tc1djmu.uikwDrsLuFZMfBupkv7A',
+        /** Запрещённые для изменения формы контроля */
+        RESTRICTED: ['Диалог', 'Докл', 'УчЗ']
+    }
 };
 
+/**
+ * Цветовая палитра для оценок
+ * Каждый цвет соответствует определённой оценке
+ */
+const COLORS = {
+    /** Отлично (5) - зелёный */
+    GREEN: '#CCFFCC',
+    /** Хорошо (4) - голубой */
+    BLUE: '#c2e0ff',
+    /** Удовлетворительно (3) - жёлтый */
+    YELLOW: '#FFFFCC',
+    /** Неудовлетворительно (2) - красный */
+    RED: '#FF9999',
+    /** Предупреждающий (недостаточно оценок) - оранжевый */
+    WARNING: '#fdd9b5',
+    /** Опасный (критично мало оценок) - розовый */
+    DANGER: '#fccfd3',
+    /** Базовый цвет фона */
+    DEFAULT_BG: '#ffffff',
+    /** Цвет уголка "почти достиг" - жёлтый/оранжевый */
+    CORNER: '#ffceff',
+    /** Цвет уголка при несоответствии среднего балла - серый */
+    CORNER_MISMATCH: '#cccccc',
+    /** Цвет подсветки запрещённых форм контроля - красный */
+    RESTRICTED_CONTROL: '#ff0000'
+};
 
 /**
- * Определяет тип округления оценок для текущего журнала
- * @param {string} nameJornal - название журнала
- * @returns {boolean} true - математическое округление, false - лицейское
+ * Пороговые значения для определения цвета итоговой оценки
+ * Зависят от метода округления (математический или лицейский)
  */
-function isMathRoundType(nameJornal) {
-    // проверяем есть ли в названии текущего журнала слова из списка журналов в которых применяется математическое округление
-    for (let i = 0; i < WRONG_JOURNAL_LIST.length; i++) {
-        if (nameJornal.includes(WRONG_JOURNAL_LIST[i])) {
-            return true
+const GRADE_THRESHOLDS = {
+    /** Математическое округление (стандартное) */
+    MATH_ROUND: {
+        FIVE: 4.5,   // >= 4.5 → 5
+        FOUR: 3.5,   // >= 3.5 → 4
+        THREE: 2.5   // >= 2.5 → 3
+    },
+    /** Лицейское округление (более строгие требования) */
+    LYCEUM_ROUND: {
+        FIVE: 4.65,  // >= 4.65 → 5
+        FOUR: 3.6,   // >= 3.6 → 4
+        THREE: 2.6   // >= 2.6 → 3
+    }
+};
+
+/**
+ * Карта CSS-классов для оценок
+ * Используется для быстрого добавления/удаления классов
+ */
+const GRADE_CLASSES = {
+    // Обычные ячейки с оценками (градиент)
+    '5': 'mscp-grade-5',
+    '4': 'mscp-grade-4',
+    '3': 'mscp-grade-3',
+    '2': 'mscp-grade-2',
+    // Итоговые оценки (сплошной цвет)
+    final: {
+        '5': 'mscp-final-5',
+        '4': 'mscp-final-4',
+        '3': 'mscp-final-3',
+        '2': 'mscp-final-2'
+    },
+    // Средний балл
+    average: {
+        '5': 'mscp-average-5',
+        '4': 'mscp-average-4',
+        '3': 'mscp-average-3',
+        '2': 'mscp-average-2'
+    }
+};
+
+/**
+ * Карта цветов для оценок (для использования в CSS и расчётах)
+ */
+const GRADE_COLORS = {
+    '5': COLORS.GREEN,
+    '4': COLORS.BLUE,
+    '3': COLORS.YELLOW,
+    '2': COLORS.RED
+};
+
+/**
+ * Комбинации оценок для проверки
+ * Упорядочены по приоритету: меньше оценок → минимальные оценки
+ */
+const GRADE_COMBOS = {
+    /** Комбинации из 1 оценки (от меньшей к большей) */
+    single: [
+        { grades: [3], label: '3' },
+        { grades: [4], label: '4' },
+        { grades: [5], label: '5' }
+    ],
+    /** Комбинации из 2 оценок (от меньшей суммы к большей) */
+    double: [
+        { grades: [3, 3], label: '3, 3', sum: 6 },
+        { grades: [3, 4], label: '3, 4', sum: 7 },
+        { grades: [4, 4], label: '4, 4', sum: 8 },
+        { grades: [3, 5], label: '3, 5', sum: 8 },
+        { grades: [4, 5], label: '4, 5', sum: 9 },
+        { grades: [5, 5], label: '5, 5', sum: 10 }
+    ]
+};
+
+/**
+ * Настройки по умолчанию
+ * Используются при первом запуске или отсутствии сохранённых настроек
+ */
+const DEFAULT_SETTINGS = {
+    /** Цветной режим для: окрашивание накопляемости оценок (прогресс-бар) */
+    colorAccumulation: true,
+    /** Цветной режим для: окрашивание оценок за уроки */
+    colorLessonGrades: true,
+    /** Цветной режим для: окрашивание среднего балла */
+    colorAverageGrade: true,
+    /** Цветной режим для: окрашивание пограничных оценок (уголок) */
+    colorBorderlineGrades: true,
+    /** Выключать средний балл при загрузке страницы */
+    hideAverageMark: true,
+    /** Убрать баннер на странице */
+    hideBanner: false
+};
+/**
+ * ============================================================================
+ * ФАЙЛ: coloring.js
+ * 
+ * Назначение: Логика окрашивания, расчёты оценок и утилиты
+ * ============================================================================
+ */
+
+// ============================================================
+// СОСТОЯНИЕ ПРИЛОЖЕНИЯ
+// ============================================================
+
+/**
+ * Объект состояния текущего журнала
+ * Инкапсулирует все данные о просматриваемом журнале
+ * @type {Object}
+ */
+const JournalState = {
+    /** @type {boolean} Используется ли математическое округление */
+    isMathRound: false,
+    
+    /** @type {boolean} Достаточно ли 3 оценок для аттестации (при < 15 уроках) */
+    isWeNeed3Grades: false,
+    
+    /** @type {number} Количество уроков в триместре */
+    countLessons: 0,
+    
+    /** @type {HTMLElement|null} Элемент-заголовок за которым ведётся наблюдение */
+    watchElement: null,
+    
+    /** @type {Object|null} Текущие настройки */
+    settings: null,
+    
+    /**
+     * Сбрасывает состояние к начальным значениям
+     * @returns {void}
+     */
+    reset() {
+        this.isMathRound = false;
+        this.isWeNeed3Grades = false;
+        this.countLessons = 0;
+        this.settings = null;
+    },
+    
+    /**
+     * Обновляет состояние на основе данных журнала
+     * @param {HTMLTableSectionElement} tableHead - заголовок таблицы
+     * @param {string} journalName - название журнала (предмета)
+     * @returns {void}
+     */
+    update(tableHead, journalName) {
+        this.isMathRound = checkIsMathRound(journalName);
+        this.countLessons = countLessonsInTrimester(tableHead);
+        this.isWeNeed3Grades = this.countLessons < 15;
+        this.settings = loadSettings();
+    }
+};
+
+/** @type {MutationObserver|null} Наблюдатель за изменениями DOM */
+let tableObserver = null;
+
+// ============================================================
+// УТИЛИТЫ
+// ============================================================
+
+/**
+ * Объект с вспомогательными методами
+ */
+const Utils = {
+    /**
+     * Ожидает появления элемента на странице
+     * @param {string} selector - CSS-селектор элемента
+     * @param {Function} callback - функция, вызываемая при обнаружении элемента
+     * @param {number} [interval=1000] - интервал проверки в мс
+     * @returns {void}
+     */
+    waitForElement(selector, callback, interval = 1000) {
+        const element = document.querySelector(selector);
+        if (element) {
+            callback(element);
+        } else {
+            setTimeout(() => this.waitForElement(selector, callback, interval), interval);
         }
-    }
-    return false
-}
-
-
-/** Наблюдатель за изменениями в основном контенте страницы */
-let TABLE_observer = new MutationObserver((mutationsList, observer) => {
-    getHim()
-});
-
-/**
- * Считаем сколько уроков в треместре по заголовку таблицы
- */
-function countLessonsInTrimestr(tableHead) {
-    const lessons = new Set();
-    const lessonCells = tableHead.querySelectorAll('[data-test-component^="scheduleLessonCell"]');
-
-    lessonCells.forEach(cell => {
-        const lessonId = cell.getAttribute('data-test-component').split('-')[1];
-        lessons.add(lessonId);
-    });
-
-    return lessons.size;
-}
-
-
-
-/**
- * Основная функция поиска и обработки таблицы журнала
- */
-function getHim() {
-    let tablePoint = document.querySelectorAll('table'); // получаем таблицу журнала
-    if (tablePoint.length == 0) {
-        setTimeout(getHim, 1000);
-        console.log("Таблица ещё не загружена, ждём 1с");
-    }
-    else {
-        console.log('Таблица найдена');
-        JOURNAL_INFO.isMathRound = isMathRoundType(WATCH_ELEMENT.textContent)
-
-        JOURNAL_INFO.countLessons = countLessonsInTrimestr(tablePoint[0].firstChild)// количество уроков
-        JOURNAL_INFO.isWeNeed3Grades = JOURNAL_INFO.countLessons < 15 // если уроков меньше 15, то для атестации будет достаточно 3-х оценок
-        colorizeTable(tablePoint[0].lastChild)
-        //StartWatch()
-        TABLE_observer.disconnect();
-        TABLE_observer.observe(document.querySelector('main'), { childList: true, subtree: true });
-    }
-}
-
-/**
- * Генерирует градиент для прогресс-бара у имени ученика
- * @param {number} count - количество оценок у ученика
- * @param {boolean} is_we_need_3_grades - нужно ли только 3 оценки для аттестации
- * @returns {string} CSS градиент для прогресс-бара
- */
-function genGradPointCount(count, is_we_need_3_grades) {
-    if (is_we_need_3_grades) { // если нам нужно только 3 оценки для атестации
-        switch (count) {
-            case 0:
-                return 'linear-gradient(to left,#ffffff)'
-            case 1:
-                return 'linear-gradient(to left, #ffffff 66%, #fccfd3 0%)'
-            case 2:
-                return 'linear-gradient(to left, #ffffff 33%, #fdd9b5 0%)'
-            default:
-                return 'linear-gradient(to left,  #CCFFCC)'
-        }
-    } else { // если нам нужно 5 оценок для атестации
-        switch (count) {
-            case 0:
-                return 'linear-gradient(to left,#ffffff)'
-            case 1:
-                return 'linear-gradient(to left, #ffffff 80%, #fccfd3 0%)'
-            case 2:
-                return 'linear-gradient(to left, #ffffff 60%, #fccfd3 0%)'
-            case 3:
-                return 'linear-gradient(to left, #ffffff 40%, #fccfd3 0%)'
-            case 4:
-                return 'linear-gradient(to left, #ffffff 20%, #fdd9b5 0%)'
-            default:
-                return 'linear-gradient(to left,  #CCFFCC)'
-        }
-    }
-}
-
-/**
- * Перевод оценки в код цвета
- * @param {string} str_point - строка с оценкой
- * @returns {string} Код цвета или null
- */
-function Color_selection(str_point) {
-    let color = null
-    if (str_point == '5') { color = Colors.GREEN }
-    else if (str_point == '4') { color = Colors.BLUE }
-    else if (str_point == '3') { color = Colors.YELLOW }
-    else if (str_point == '2') { color = Colors.RED }
-    return color
-}
-
-/**
- * Раскрашивает ячейку с оценкой
- * @param {Element} cellNode - ячейка с оценкой
- * @returns {string} Оценка или null
- */
-function Color_point_cell(cellNode) {
-    if (!cellNode.hasChildNodes()) { return null }// если есть оценка в ячейке (или н-ка)
-    let point = cellNode.firstChild.textContent
-    let colorCell = Color_selection(point)
-    if (colorCell != null) {
-        cellNode.style.background = 'linear-gradient(225deg,transparent,' + colorCell + ' 70%)'
-        cellNode.classList.add(CLASS_ADD_NAME);
-        return point
-    }
-    return null
-}
-
-/**
- * Определяет, является ли данная ячейка итоговой оценкой
- * @param {Element} cellNode - ячейка с оценкой
- * @returns {boolean}
- */
-function Is_final_point(cellNode) {
-    if (cellNode.hasAttribute('data-test-component')) {
-        if (cellNode.getAttribute('data-test-component').includes('finalResult')) {
-            return true
-        }
-    }
-    return false
-}
-
-/**
- * Раскрашивает ячейку с двойкой в красный цвет
- * @param {Element} cellNode - ячейка с оценкой
- * @returns {string} Оценка или null
- */
-function Color_dvoika_cell(cellNode) {
-    if (!cellNode.hasChildNodes()) { return null }// если есть оценка в ячейке (или н-ка)
-    let point = cellNode.firstChild.textContent
-    let colorCell = Color_selection(point)
-    if (colorCell != null) {
-        cellNode.style.background = 'radial-gradient(circle at right top, white 30%, rgb(255, 0, 0) 70%)'
-        cellNode.classList.add(CLASS_ADD_NAME);
-        return point
-    }
-    return null
-}
-
-/**
- * Окрашивает ячейку итоговой оценки
- * @param {Element} cellNode - ячейка с оценкой
- * @param {Array} allPoint - массив с всеми оценками в строке
- * @param {boolean} is_we_need_3_grades - для атестации нужно только 3 оценки? если нет то 5
- */
-function colorFinalPointSell(cellNode, allPoint, is_we_need_3_grades) {
-    let neadPoint = is_we_need_3_grades ? 3 : 5 // определяем сколько нужно оценок для атестации
-    if (neadPoint > allPoint.length) { // если оценок меньше, красим в красный низ ячейки
-        cellNode.style.background = 'linear-gradient(180deg,transparent 70%, #FF9999)'
-        cellNode.classList.add(CLASS_ADD_NAME);
-        return
-    }
-    if (allPoint.at(-1) == '2') { // если последняя оценка 2, красим в красный низ ячейки
-        cellNode.style.background = 'linear-gradient(180deg,transparent 70%, #FF9999)'
-        cellNode.classList.add(CLASS_ADD_NAME);
-        return
-    }
-    if (!cellNode.hasChildNodes()) { return } // если ячейка пустая не красим
-    let point = cellNode.firstChild.textContent // получаем оценку
-    let colorCell = Color_selection(point) // получаем код цвета
-    if (colorCell != null) { // если код получен, красим
-        cellNode.style.backgroundColor = colorCell
-        cellNode.classList.add(CLASS_ADD_NAME);
-    }
-}
-
-/**
- * Окрашивает стандартную строку таблицы с оценками ученика
- * @param {Element} rouNode - строка таблицы
- * @param {boolean} is_need_3_grades - нужно ли только 3 оценки для аттестации
- */
-function colorizeStandartRow(rouNode, is_need_3_grades) {
-    /** массив всех оценок*/
-    let pointList = []
-    let dvoiki = []
-    if (rouNode.childNodes.length < 2) { return }// пропускаем пустые строки таблицы, возможно можно только первую
-
-    for (let j = 1; j < rouNode.childNodes.length - 1; j++) {// пробегаем по ячейкам с оценками
-        let cellNode = rouNode.childNodes[j].firstChild //ячейка строки
-        if (Is_final_point(cellNode)) { // занимаемся последней ячейкой с итоговой оценкой, и первой с именем/прогресбаром
-            colorFinalPointSell(cellNode, pointList, is_need_3_grades)
-            rouNode.firstChild.style.background = genGradPointCount(pointList.length, is_need_3_grades) // красим имя в прогресбар по количеству оценок
-            rouNode.firstChild.classList.add(CLASS_ADD_NAME);
-            continue
-        }
-        let currentPoint = Color_point_cell(cellNode) // красим ячейку и получаем ту оценку которая там была
-
-        if (currentPoint != null) {
-            //если оценка 2 добавляем в массив
-            if (currentPoint == '2') {
-                dvoiki.push(cellNode);
-                if (dvoiki.length >= 3) { // если двоек 3 подряд то красим все в красный
-                    dvoiki.forEach(Color_dvoika_cell)
-                }
+    },
+    
+    /**
+     * Удаляет все CSS-классы окрашивания с элементов в контейнере
+     * @param {HTMLElement} container - контейнер для очистки
+     * @returns {void}
+     */
+    clearColoring(container) {
+        const coloredElements = container.querySelectorAll('[class*="mscp-"]');
+        
+        coloredElements.forEach(element => {
+            const classesToRemove = [...element.classList].filter(
+                className => className.startsWith(CONFIG.CLASS_PREFIX + '-')
+            );
+            
+            if (classesToRemove.length > 0) {
+                element.classList.remove(...classesToRemove);
             }
-            else {// если двойки подряд кончились то обнуляем списко
-                dvoiki = []
-            }
-            pointList.push(currentPoint)// если получили, записываем в массив
-        }
+            
+            element.style.removeProperty('background');
+        });
+    },
+    
+    /**
+     * Парсит строку с оценкой в число
+     * @param {string} text - строка с оценкой (например, "4,5")
+     * @returns {number} Числовое значение оценки
+     */
+    parseGrade(text) {
+        return parseFloat(text.replace(',', '.'));
+    },
+    
+    /**
+     * Проверяет, имеет ли ячейка атрибут data-test-component с определённым значением
+     * @param {HTMLElement} cell - ячейка для проверки
+     * @param {string} value - значение для поиска в атрибуте
+     * @returns {boolean} true, если атрибут содержит значение
+     */
+    hasTestAttribute(cell, value) {
+        const attr = cell.getAttribute('data-test-component');
+        return attr && attr.includes(value);
     }
-    let itogPointItem = rouNode.childNodes[rouNode.childNodes.length - 1].firstChild // получаем средний балл
-    let point = parseFloat(itogPointItem.firstChild.textContent.replace(",", '.'))// переводим в число
-    let color // определям цвет по правилам округления
-    if (JOURNAL_INFO.isMathRound) {
-        if (point >= 4.5) { color = Colors.GREEN }
-        else if (point >= 3.5) { color = Colors.BLUE }
-        else if (point >= 2.5) { color = Colors.YELLOW }
-        else if (point < 2.5) { color = Colors.RED }
+};
 
-    } else {
-        if (point >= 4.65) { color = Colors.GREEN }
-        else if (point >= 3.6) { color = Colors.BLUE }
-        else if (point >= 2.6) { color = Colors.YELLOW }
-        else if (point < 2.6) { color = Colors.RED }
-    }
-    itogPointItem.parentNode.style.backgroundColor = color // красим среднийи бал
-    itogPointItem.parentNode.classList.add(CLASS_ADD_NAME);
-}
-
-/**
- * Окрашивает строку с итоговыми оценками (годовые/четвертные)
- * @param {Element} rouNode - строка таблицы
- */
-function colorizeItoRow(rouNode) {
-    /** массив всех оценок*/
-    let pointList = []
-    if (rouNode.childNodes.length < 2) { return }// пропускаем пустые строки таблицы, возможно можно только первую
-
-    for (let j = 1; j < rouNode.childNodes.length - 1; j++) {// пробегаем по ячейкам с оценками
-        let cellNode = rouNode.childNodes[j].firstChild //ячейка строки
-        if (Is_final_point(cellNode)) { // занимаемся последней ячейкой с итоговой оценкой, и первой с именем/прогресбаром
-            if (!cellNode.hasChildNodes()) { continue }// если есть оценка в ячейке (или н-ка)
-            let point = cellNode.firstChild.textContent
-            let colorCell = Color_selection(point)
-            if (colorCell != null) {
-                cellNode.style.backgroundColor = colorCell
-                cellNode.classList.add(CLASS_ADD_NAME);
-                pointList.push(point)
-            }
-        }
-        if (cellNode.hasAttribute('data-test-component')) {
-            if (cellNode.getAttribute('data-test-component').includes('yearResult')) {
-                if (!cellNode.hasChildNodes()) { continue }// если есть оценка в ячейке (или н-ка)
-                let point = cellNode.firstChild.textContent
-                let colorCell = Color_selection(point)
-                if (colorCell != null) {
-                    cellNode.style.backgroundColor = colorCell
-                    cellNode.classList.add(CLASS_ADD_NAME);
-                    pointList.push(point)
-                }
-            }
-        }
-
-    }
-    let itogPointItem = rouNode.childNodes[rouNode.childNodes.length - 1].firstChild // получаем средний балл
-    let point = (Number(pointList[0]) + Number(pointList[1]) + Number(pointList[2])) / 3
-    let color // определям цвет по правилам округления
-    if (point >= 4.5) { color = Colors.GREEN }
-    else if (point >= 3.5) { color = Colors.BLUE }
-    else if (point >= 2.5) { color = Colors.YELLOW }
-    else if (point < 2.5) { color = Colors.RED }
-
-    itogPointItem.parentNode.style.backgroundColor = color // красим среднийи бал
-    itogPointItem.parentNode.classList.add(CLASS_ADD_NAME);
-}
-
-/**
- * Основная функция окрашивания таблицы журнала
- * @param {Element} tableBody - тело таблицы (tbody)
- */
-function colorizeTable(tableBody) {
-    // Удаляем предыдущее окрашивание
-    let oldColorElem = tableBody.querySelectorAll('.' + CLASS_ADD_NAME);
-    oldColorElem.forEach(element => {
-        element.style.removeProperty("background-color");
-        element.style.removeProperty('background');
-        element.classList.remove(CLASS_ADD_NAME)
-    });
-
-    // Проверяем режим отображения (итоговые отметки или обычный)
-    let elements = document.querySelector('.FDJEFXkDpWhBLZDxnInU.hGtB0oSuryeRiAS2J57Y.Qp8HUr00NXY26hlHOZwb.cbtxLJutW4h15oSu11WO.IfMLW0irD86BmgWhT8FP.C0qHlb4C7fAcYrnlODD0.false.NxJu2UTTgygYiAOvhTvC.IFkWdTtYw_C_ncCuZmUF.Cb3mMUc4RqGu4myaBrNy');
-    let titl = elements.getAttribute('title');
-    if (titl == 'Режим отображения итоговых отметок') {
-        for (let i = 0; i < tableBody.childNodes.length; i++) { // проходим по строкам таблицу
-            colorizeItoRow(tableBody.childNodes[i])
-        }
-        return
-    }
-
-    // Окрашиваем все строки таблицы
-    for (let i = 0; i < tableBody.childNodes.length; i++) { // проходим по строкам таблицу
-        colorizeStandartRow(tableBody.childNodes[i], JOURNAL_INFO.isWeNeed3Grades)
-    }
-}
-
-/**
- * Скачивает таблицу журнала как HTML файл
- */
-function downloadAsFile() {
-    let tablePoint = document.querySelectorAll('table')[0]; // получаем таблицу журнала
-    let a = document.createElement("a");
-    let file = new Blob([tablePoint.outerHTML], { type: 'text/html' });
-    a.href = URL.createObjectURL(file);
-    a.download = `ex.html`;
-    a.click();
-    a.remove()
-}
+// ============================================================
+// РАБОТА С НАСТРОЙКАМИ
+// ============================================================
 
 /**
  * Загружает настройки из localStorage
+ * Объединяет с DEFAULT_SETTINGS для заполнения отсутствующих полей
  * @returns {Object} Объект с настройками
  */
 function loadSettings() {
     try {
-        const settings = localStorage.getItem(MAIN_KEY);
-        return settings ? JSON.parse(settings) : {};
+        const settings = localStorage.getItem(CONFIG.STORAGE_KEY);
+        const savedSettings = settings ? JSON.parse(settings) : {};
+        return { ...DEFAULT_SETTINGS, ...savedSettings };
     } catch (error) {
         console.error('Ошибка загрузки настроек:', error);
-        return {};
+        return { ...DEFAULT_SETTINGS };
     }
 }
 
 /**
  * Сохраняет настройки в localStorage
- * @param {Object} settings - Объект с настройками для сохранения
+ * @param {Object} settings - объект с настройками для сохранения
+ * @returns {void}
  */
 function saveSettings(settings) {
     try {
-        localStorage.setItem(MAIN_KEY, JSON.stringify(settings));
+        localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(settings));
     } catch (error) {
         console.error('Ошибка сохранения настроек:', error);
     }
 }
 
-function isTargetUrl(url) {
-    const pattern = /^https:\/\/authedu\.mosreg\.ru\/teacher\/study-process\/journal\/(?:grade|my)\/[0-9]+(\?.*)?$/;
-    return pattern.test(url);
-}
-
-function start() {
-    console.log('URL совпал с шаблоном! Запускаем функцию start()');
-    setTimeout(insertButton, 1000);
-    setLocalStorageParam();
-    //insertButton();
+/**
+ * Устанавливает параметры в localStorage для скрытия среднего балла
+ * Модифицирует journalSettings.additionalGridSettings
+ * @returns {void}
+ */
+function applyHideAverageMarkSetting() {
+    const settings = loadSettings();
+    
+    if (!settings.hideAverageMark) return;
+    
+    try {
+        const journalSettings = JSON.parse(localStorage.getItem('journalSettings') || 'null');
+        
+        if (journalSettings && journalSettings.additionalGridSettings) {
+            journalSettings.additionalGridSettings.isShowAverageMarkTest = false;
+            journalSettings.additionalGridSettings.isShowAverageMarkTopic = false;
+            localStorage.setItem('journalSettings', JSON.stringify(journalSettings));
+        }
+    } catch (error) {
+        console.error('Ошибка применения настроек скрытия:', error);
+    }
 }
 
 /**
- * Устанавливает параметры в localStorage для скрытия среднего балла
+ * Удаляет баннер госуслуг и устанавливает высоту основного контейнера
+ * - Удаляет элементы a.WC-Banner-link
+ * - Добавляет CSS-стиль для .MSC8WgFhoGMq0svc { height: calc(100vh - 40px) }
+ * @returns {void}
  */
-function setLocalStorageParam() {
-    const settings = loadSettings();
-    
-    // тут нужно проверить флаг в локалсторадж. Если настройка выключена, то выходим из функции
-    if (!settings.hideAverageMark) {
-        return;
-    }
-    
-    // Получаем текущие настройки из localStorage
-    const journalSettings = JSON.parse(localStorage.getItem('journalSettings'));
+function removeBannerAndSetHeight() {
+    // Удаление элемента a.WC-Banner-link
+    document.querySelectorAll('a.WC-Banner-link').forEach(el => {
+        el.remove();
+    });
 
-    // Проверяем, что настройки существуют и есть секция additionalGridSettings
-    if (journalSettings && journalSettings.additionalGridSettings) {
-        // Изменяем нужные значения в additionalGridSettings
-        journalSettings.additionalGridSettings.isShowAverageMarkTest = false;
-        journalSettings.additionalGridSettings.isShowAverageMarkTopic = false;
-
-        // Сохраняем обратно в localStorage
-        localStorage.setItem('journalSettings', JSON.stringify(journalSettings));
+    // Установка нужной высоты для класса .MSC8WgFhoGMq0svc
+    const style = document.createElement('style');
+    style.id = 'mscp-banner-override';
+    
+    // Проверяем, не добавлен ли уже стиль
+    if (!document.getElementById('mscp-banner-override')) {
+        style.textContent = `
+            .MSC8WgFhoGMq0svc {
+                height: calc(100vh - 40px);
+            }
+        `;
+        document.head.appendChild(style);
     }
 }
 
-function initUrlMonitor() {
-    let currentUrl = window.location.href;
-
-    // Проверяем текущий URL при загрузке
-    if (isTargetUrl(currentUrl)) {
-        start();
-    }
-
-    // Отслеживаем события навигации
-    const originalPushState = history.pushState;
-    const originalReplaceState = history.replaceState;
-
-    history.pushState = function (...args) {
-        originalPushState.apply(this, args);
-        handleUrlChange();
-    };
-
-    history.replaceState = function (...args) {
-        originalReplaceState.apply(this, args);
-        handleUrlChange();
-    };
-
-    window.addEventListener('popstate', handleUrlChange);
-
-    // Дополнительно: отслеживаем клики по ссылкам
-    document.addEventListener('click', (event) => {
-        const link = event.target.closest('a');
-        if (link && link.href) {
-            setTimeout(handleUrlChange, 100);
-        }
+/**
+ * Удаляет шапку сайта и устанавливает высоту основного контейнера
+ * - Удаляет элементы div._56grJoiM2euP0m-4_cQJ0._3Nr9SercCabAgtlvo50e48
+ * - Добавляет CSS-стиль для .MSC8WgFhoGMq0svc { height: 100vh }
+ * @returns {void}
+ */
+function removeHeaderAndSetHeight() {
+    removeBannerAndSetHeight();
+    
+    // Удаление элемента div._56grJoiM2euP0m-4_cQJ0._3Nr9SercCabAgtlvo50e48
+    document.querySelectorAll('div._56grJoiM2euP0m-4_cQJ0._3Nr9SercCabAgtlvo50e48').forEach(el => {
+        el.remove();
     });
 
-    function handleUrlChange() {
-        const newUrl = window.location.href;
+    // Установка нужной высоты для класса .MSC8WgFhoGMq0svc
+    const style = document.createElement('style');
+    style.id = 'mscp-header-override';
+    
+    // Проверяем, не добавлен ли уже стиль
+    if (!document.getElementById('mscp-header-override')) {
+        style.textContent = `
+            .MSC8WgFhoGMq0svc {
+                height: calc(100vh);
+            }
+        `;
+        document.head.appendChild(style);
+    }
+}
 
-        // Сравниваем URL без учета параметров
-        const currentUrlWithoutParams = currentUrl.split('?')[0];
-        const newUrlWithoutParams = newUrl.split('?')[0];
+// ============================================================
+// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+// ============================================================
 
-        if (newUrlWithoutParams !== currentUrlWithoutParams) {
-            currentUrl = newUrl;
-            if (isTargetUrl(newUrl)) {
-                start();
+/**
+ * Проверяет, используется ли математическое округление для предмета
+ * @param {string} subjectName - название предмета
+ * @returns {boolean} true, если используется математическое округление
+ */
+function checkIsMathRound(subjectName) {
+    return CONFIG.MATH_ROUND_SUBJECTS.some(subject => 
+        subjectName.includes(subject)
+    );
+}
+
+/**
+ * Подсчитывает количество уникальных уроков в триместре
+ * @param {HTMLTableSectionElement} tableHead - заголовок таблицы журнала
+ * @returns {number} Количество уроков
+ */
+function countLessonsInTrimester(tableHead) {
+    const lessons = new Set();
+    const lessonCells = tableHead.querySelectorAll(CONFIG.SELECTORS.LESSON_CELL);
+    
+    lessonCells.forEach(cell => {
+        const lessonId = cell.getAttribute('data-test-component').split('-')[1];
+        lessons.add(lessonId);
+    });
+    
+    return lessons.size;
+}
+
+/**
+ * Определяет текущую итоговую оценку по среднему баллу
+ * @param {number} averageGrade - средний балл
+ * @param {boolean} isMathRound - использовать математическое округление
+ * @returns {string} Оценка: '5', '4', '3' или '2'
+ */
+function getCurrentGrade(averageGrade, isMathRound) {
+    const thresholds = isMathRound 
+        ? GRADE_THRESHOLDS.MATH_ROUND 
+        : GRADE_THRESHOLDS.LYCEUM_ROUND;
+    
+    if (averageGrade >= thresholds.FIVE) return '5';
+    if (averageGrade >= thresholds.FOUR) return '4';
+    if (averageGrade >= thresholds.THREE) return '3';
+    return '2';
+}
+
+/**
+ * Определяет CSS-класс для ячейки среднего балла
+ * @param {number} averageGrade - средний балл
+ * @param {boolean} isMathRound - использовать математическое округление
+ * @returns {string} CSS-класс (например, 'mscp-average-5')
+ */
+function getAverageClass(averageGrade, isMathRound) {
+    const grade = getCurrentGrade(averageGrade, isMathRound);
+    return GRADE_CLASSES.average[grade];
+}
+
+/**
+ * Собирает данные об оценках из строки таблицы
+ * @param {HTMLTableRowElement} row - строка таблицы
+ * @returns {Object} Объект с данными: { grades: string[], sum: number, count: number }
+ */
+function collectGradesFromRow(row) {
+    const grades = [];
+    let sum = 0;
+    let count = 0;
+    
+    for (let j = 1; j < row.childNodes.length - 1; j++) {
+        const cell = row.childNodes[j].firstChild;
+        
+        if (isFinalGradeCell(cell)) continue;
+        if (!cell.hasChildNodes()) continue;
+        
+        const gradeText = cell.firstChild.textContent;
+        const grade = parseInt(gradeText);
+        
+        if (!isNaN(grade) && grade >= 2 && grade <= 5) {
+            grades.push(gradeText);
+            sum += grade;
+            count++;
+        }
+    }
+    
+    return { grades, sum, count };
+}
+
+// ============================================================
+// РАСЧЁТ КОМБИНАЦИЙ ОЦЕНОК
+// ============================================================
+
+/**
+ * Вычисляет, сколько пятёрок нужно для достижения порога
+ * @param {number} sum - текущая сумма оценок
+ * @param {number} count - текущее количество оценок
+ * @param {number} threshold - пороговое значение среднего балла
+ * @returns {number|null} Количество пятёрок или null, если порог уже достигнут
+ */
+function calcFivesNeeded(sum, count, threshold) {
+    const numerator = threshold * count - sum;
+    const denominator = 5 - threshold;
+    
+    if (numerator <= 0) return null;
+    
+    return Math.ceil(numerator / denominator);
+}
+
+/**
+ * Проверяет, достигнет ли комбинация оценок порога
+ * @param {number} sum - текущая сумма оценок
+ * @param {number} count - текущее количество оценок
+ * @param {number[]} comboGrades - массив оценок в комбинации
+ * @param {number} threshold - пороговое значение среднего балла
+ * @returns {boolean} true, если комбинация достигает порога
+ */
+function checkComboReachesThreshold(sum, count, comboGrades, threshold) {
+    const comboSum = comboGrades.reduce((a, b) => a + b, 0);
+    const newSum = sum + comboSum;
+    const newCount = count + comboGrades.length;
+    const newAverage = newSum / newCount;
+    
+    return newAverage >= threshold;
+}
+
+/**
+ * Вычисляет сумму оценок в комбинации
+ * @param {number[]} comboGrades - массив оценок
+ * @returns {number} Сумма оценок
+ */
+function getComboSum(comboGrades) {
+    return comboGrades.reduce((a, b) => a + b, 0);
+}
+
+/**
+ * Проверяет, содержится ли оценка из singleCombo в doubleCombo
+ * @param {number[]} singleGrades - массив из одной оценки
+ * @param {number[]} doubleGrades - массив из двух оценок
+ * @returns {boolean} true, если single-оценка есть в double-комбинации
+ */
+function isSingleContainedInDouble(singleGrades, doubleGrades) {
+    return doubleGrades.includes(singleGrades[0]);
+}
+
+/**
+ * Находит лучшие комбинации для достижения следующей оценки
+ * Приоритет: меньше оценок → меньше сумма → меньше оценки
+ * Если single-оценка содержится в double — показываем только single
+ * @param {number} sum - текущая сумма оценок
+ * @param {number} count - текущее количество оценок
+ * @param {string} targetGrade - целевая оценка ('5', '4' или '3')
+ * @param {boolean} isMathRound - использовать математическое округление
+ * @returns {Object} { label: string, isFormula: boolean, comboSize: number }
+ */
+function findBestCombo(sum, count, targetGrade, isMathRound) {
+    const thresholds = isMathRound 
+        ? GRADE_THRESHOLDS.MATH_ROUND 
+        : GRADE_THRESHOLDS.LYCEUM_ROUND;
+    
+    let threshold;
+    switch (targetGrade) {
+        case '5': threshold = thresholds.FIVE; break;
+        case '4': threshold = thresholds.FOUR; break;
+        case '3': threshold = thresholds.THREE; break;
+        default: return { label: '', isFormula: false, comboSize: 0 };
+    }
+    
+    // Ищем подходящие комбинации из 1 оценки (идут по возрастанию: 3, 4, 5)
+    let bestSingle = null;
+    for (const combo of GRADE_COMBOS.single) {
+        if (checkComboReachesThreshold(sum, count, combo.grades, threshold)) {
+            bestSingle = combo;
+            break;
+        }
+    }
+    
+    // Ищем ВСЕ подходящие комбинации из 2 оценок и берём с минимальной суммой
+    let bestDouble = null;
+    let bestDoubleSum = Infinity;
+    
+    for (const combo of GRADE_COMBOS.double) {
+        if (checkComboReachesThreshold(sum, count, combo.grades, threshold)) {
+            const comboSum = getComboSum(combo.grades);
+            if (comboSum < bestDoubleSum) {
+                bestDouble = combo;
+                bestDoubleSum = comboSum;
             }
         }
     }
+    
+    // Формируем результат
+    if (!bestSingle && !bestDouble) {
+        const fivesNeeded = calcFivesNeeded(sum, count, threshold);
+        if (fivesNeeded === null) {
+            return { label: '', isFormula: false, comboSize: 0 };
+        }
+        return { 
+            label: fivesNeeded === 1 ? '1 пятёрка' : `${fivesNeeded} пятёрок`, 
+            isFormula: true, 
+            comboSize: fivesNeeded 
+        };
+    }
+    
+    if (bestSingle && bestDouble) {
+        // Если single-оценка содержится в double — показываем только single
+        if (isSingleContainedInDouble(bestSingle.grades, bestDouble.grades)) {
+            return { label: bestSingle.label, isFormula: false, comboSize: 1 };
+        }
+        // Иначе показываем оба варианта
+        return { 
+            label: `${bestSingle.label} или ${bestDouble.label}`, 
+            isFormula: false, 
+            comboSize: 1 
+        };
+    }
+    
+    if (bestSingle) {
+        return { label: bestSingle.label, isFormula: false, comboSize: 1 };
+    }
+    
+    return { label: bestDouble.label, isFormula: false, comboSize: 2 };
 }
 
-// Запускаем мониторинг
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initUrlMonitor);
-} else {
-    initUrlMonitor();
-}
-
-// File: button.js
-/**
- * Вставляет кнопки управления в интерфейс журнала
- */
-function insertButton() {
-    // Если кнопка уже существует, выходим
-    if (document.querySelector('.licey24_but')) {
-        return;
-    }
-
-    // Если главная секция не найдена, пробуем снова через 1 секунду
-    const mainSection = document.querySelectorAll('main');
-    if (mainSection.length === 0) {
-        console.log("Div для кнопки не найден, ждём 1с");
-        setTimeout(insertButton, 1000);
-        return;
-    }
-
-    console.log("Ставим кнопки");
-
-    // Находим родительский элемент для размещения кнопок
-    const parentElement = document.querySelector('[data-test-component="undefined-subheaderTitle-titleContainer"]');
-    if (!parentElement) {
-        setTimeout(insertButton, 1000);
-        return;
-    }
-
-    // Ищем h6 элемент внутри родительского
-    const h6Element = parentElement.querySelector('h6');
-    if (!h6Element) {
-        setTimeout(insertButton, 1000);
-        return;
-    }
-
-    WATCH_ELEMENT = h6Element.parentNode;
-
-    // Создаем стили и кнопки
-    createButtonStyles();
-    createButtons();
-
-    // Автоматически запускаем окрашивание
-    getHim();
-}
+// ============================================================
+// ГЕНЕРАЦИЯ ГРАДИЕНТОВ
+// ============================================================
 
 /**
- * Создает и добавляет стили для кнопок
+ * Генерирует CSS-градиент для прогресс-бара накопляемости оценок
+ * @param {number} gradeCount - количество оценок
+ * @param {boolean} isWeNeed3Grades - нужно ли 3 оценки (вместо 5)
+ * @returns {string} CSS-строка с gradient
  */
-function createButtonStyles() {
+function generateProgressGradient(gradeCount, isWeNeed3Grades) {
+    const defaultColor = COLORS.DEFAULT_BG;
+    
+    if (isWeNeed3Grades) {
+        const gradients = {
+            0: `linear-gradient(to left, ${defaultColor})`,
+            1: `linear-gradient(to left, ${defaultColor} 66%, ${COLORS.DANGER} 0%)`,
+            2: `linear-gradient(to left, ${defaultColor} 33%, ${COLORS.WARNING} 0%)`
+        };
+        return gradients[gradeCount] || `linear-gradient(to left, ${COLORS.GREEN})`;
+    }
+    
+    const gradients = {
+        0: `linear-gradient(to left, ${defaultColor})`,
+        1: `linear-gradient(to left, ${defaultColor} 80%, ${COLORS.DANGER} 0%)`,
+        2: `linear-gradient(to left, ${defaultColor} 60%, ${COLORS.DANGER} 0%)`,
+        3: `linear-gradient(to left, ${defaultColor} 40%, ${COLORS.DANGER} 0%)`,
+        4: `linear-gradient(to left, ${defaultColor} 20%, ${COLORS.WARNING} 0%)`
+    };
+    return gradients[gradeCount] || `linear-gradient(to left, ${COLORS.GREEN})`;
+}
+
+// ============================================================
+// ПРОВЕРКИ ЯЧЕЕК
+// ============================================================
+
+/**
+ * Проверяет, является ли ячейка итоговой оценкой за период
+ * @param {HTMLElement} cell - ячейка для проверки
+ * @returns {boolean} true, если это итоговая оценка
+ */
+function isFinalGradeCell(cell) {
+    return Utils.hasTestAttribute(cell, 'finalResult');
+}
+
+/**
+ * Проверяет, является ли ячейка годовой оценкой
+ * @param {HTMLElement} cell - ячейка для проверки
+ * @returns {boolean} true, если это годовая оценка
+ */
+function isYearGradeCell(cell) {
+    return Utils.hasTestAttribute(cell, 'yearResult');
+}
+
+// ============================================================
+// ФУНКЦИИ ОКРАШИВАНИЯ ЯЧЕЕК
+// ============================================================
+
+/**
+ * Окрашивает ячейку с оценкой за урок
+ * @param {HTMLElement} cell - ячейка для окрашивания
+ * @returns {string|null} Оценка или null, если ячейка пустая
+ */
+function colorGradeCell(cell) {
+    if (!cell.hasChildNodes()) return null;
+    
+    const grade = cell.firstChild.textContent;
+    const className = GRADE_CLASSES[grade];
+    
+    if (className) {
+        cell.classList.add(className);
+        return grade;
+    }
+    
+    return null;
+}
+
+/**
+ * Окрашивает ячейку с двойкой в цепочке двоек
+ * @param {HTMLElement} cell - ячейка для окрашивания
+ * @returns {string|null} '2' или null
+ */
+function colorBadGradeCell(cell) {
+    if (!cell.hasChildNodes()) return null;
+    
+    const grade = cell.firstChild.textContent;
+    
+    if (grade === '2') {
+        cell.classList.add('mscp-grade-bad');
+        return grade;
+    }
+    
+    return null;
+}
+
+/**
+ * Окрашивает ячейку итоговой оценки
+ * @param {HTMLElement} cell - ячейка для окрашивания
+ * @param {string[]} allGrades - массив всех оценок в строке
+ * @param {boolean} isWeNeed3Grades - нужно ли 3 оценки для аттестации
+ * @returns {void}
+ */
+function colorFinalGradeCell(cell, allGrades, isWeNeed3Grades) {
+    const requiredGrades = isWeNeed3Grades ? 3 : 5;
+    
+    if (requiredGrades > allGrades.length) {
+        cell.classList.add('mscp-insufficient');
+        return;
+    }
+    
+    if (allGrades.at(-1) === '2') {
+        cell.classList.add('mscp-insufficient');
+        return;
+    }
+    
+    if (!cell.hasChildNodes()) return;
+    
+    const grade = cell.firstChild.textContent;
+    const className = GRADE_CLASSES.final[grade];
+    
+    if (className) {
+        cell.classList.add(className);
+    }
+}
+
+// ============================================================
+// ОКРАШИВАНИЕ СТРОК ТАБЛИЦЫ
+// ============================================================
+
+/**
+ * Окрашивает стандартную строку таблицы с оценками ученика
+ * @param {HTMLTableRowElement} row - строка таблицы
+ * @returns {void}
+ */
+function colorizeStandardRow(row) {
+    if (row.childNodes.length < 2) return;
+    
+    const gradesData = collectGradesFromRow(row);
+    const allGrades = gradesData.grades;
+    const settings = JournalState.settings;
+    
+    let consecutiveTwos = [];
+    
+    for (let j = 1; j < row.childNodes.length - 1; j++) {
+        const cell = row.childNodes[j].firstChild;
+        
+        if (isFinalGradeCell(cell)) {
+            colorFinalGradeCell(cell, allGrades, JournalState.isWeNeed3Grades);
+            
+            // Прогресс-бар — только если включено colorAccumulation
+            if (settings.colorAccumulation) {
+                row.firstChild.style.background = generateProgressGradient(
+                    allGrades.length, 
+                    JournalState.isWeNeed3Grades
+                );
+                row.firstChild.classList.add('mscp-progress');
+            }
+            continue;
+        }
+        
+        // Окрашивание оценок за уроки — только если включено colorLessonGrades
+        if (settings.colorLessonGrades) {
+            const currentGrade = colorGradeCell(cell);
+            
+            if (currentGrade) {
+                if (currentGrade === '2') {
+                    consecutiveTwos.push(cell);
+                    
+                    if (consecutiveTwos.length >= 3) {
+                        consecutiveTwos.forEach(colorBadGradeCell);
+                    }
+                } else {
+                    consecutiveTwos = [];
+                }
+            }
+        }
+    }
+    
+    colorizeAverageCell(row, gradesData);
+}
+
+/**
+ * Окрашивает ячейку среднего балла с учётом настроек
+ * - Определяет текущую оценку
+ * - Вычисляет комбинации для повышения
+ * - Добавляет уголок "почти достиг" при необходимости
+ * - Устанавливает tooltip с информацией
+ * @param {HTMLTableRowElement} row - строка таблицы
+ * @param {Object} gradesData - данные об оценках { grades, sum, count }
+ * @returns {void}
+ */
+function colorizeAverageCell(row, gradesData) {
+    const averageCell = row.childNodes[row.childNodes.length - 1].firstChild;
+    const displayedAverage = Utils.parseGrade(averageCell.firstChild.textContent);
+    const settings = JournalState.settings;
+    
+    const currentGrade = getCurrentGrade(displayedAverage, JournalState.isMathRound);
+    
+    // Вычисляем средний балл по оценкам
+    const calculatedAverage = gradesData.count > 0 ? gradesData.sum / gradesData.count : 0;
+    
+    // Проверяем соответствие отображаемого и вычисленного среднего
+    const averageMatches = Math.abs(displayedAverage - calculatedAverage) < 0.01;
+    
+    const nextGradeMap = { '2': '3', '3': '4', '4': '5' };
+    const nextGrade = nextGradeMap[currentGrade];
+    
+    let comboResult = null;
+    if (nextGrade && gradesData.count > 0) {
+        comboResult = findBestCombo(
+            gradesData.sum, 
+            gradesData.count, 
+            nextGrade, 
+            JournalState.isMathRound
+        );
+    }
+    
+    // Окрашивание среднего балла
+    if (settings.colorAverageGrade) {
+        if (comboResult && comboResult.label && settings.colorBorderlineGrades && comboResult.comboSize <= 2 && !comboResult.isFormula) {
+            const currentColor = GRADE_COLORS[currentGrade];
+            // Выбираем цвет уголка в зависимости от соответствия среднего
+            const cornerColor = averageMatches ? COLORS.CORNER : COLORS.CORNER_MISMATCH;
+            
+            averageCell.parentNode.style.background = 
+                `linear-gradient(135deg, ${currentColor} 78%, ${cornerColor} 78%)`;
+            averageCell.parentNode.classList.add('mscp-average-almost');
+        } else {
+            const className = getAverageClass(displayedAverage, JournalState.isMathRound);
+            averageCell.parentNode.classList.add(className);
+        }
+    }
+    
+    // Tooltip показываем всегда, если есть комбинация
+    if (comboResult && comboResult.label) {
+        averageCell.parentNode.dataset.tooltipText = `До "${nextGrade}": ${comboResult.label}`;
+        averageCell.parentNode.dataset.comboSize = comboResult.comboSize;
+        averageCell.parentNode.dataset.isFormula = comboResult.isFormula ? '1' : '0';
+        averageCell.parentNode.classList.add('mscp-tooltip-trigger');
+        
+        averageCell.parentNode.addEventListener('mouseenter', showTooltip);
+        averageCell.parentNode.addEventListener('mouseleave', hideTooltip);
+    }
+}
+
+/**
+ * Окрашивает строку с итоговыми оценками (четвертные/годовые)
+ * @param {HTMLTableRowElement} row - строка таблицы
+ * @returns {void}
+ */
+function colorizeSummaryRow(row) {
+    if (row.childNodes.length < 2) return;
+    
+    const finalGrades = [];
+    
+    for (let j = 1; j < row.childNodes.length - 1; j++) {
+        const cell = row.childNodes[j].firstChild;
+        
+        if (isFinalGradeCell(cell)) {
+            if (!cell.hasChildNodes()) continue;
+            
+            const grade = cell.firstChild.textContent;
+            const className = GRADE_CLASSES.final[grade];
+            
+            if (className) {
+                cell.classList.add(className);
+                finalGrades.push(grade);
+            }
+        }
+        
+        if (isYearGradeCell(cell)) {
+            if (!cell.hasChildNodes()) continue;
+            
+            const grade = cell.firstChild.textContent;
+            const className = GRADE_CLASSES.final[grade];
+            
+            if (className) {
+                cell.classList.add(className);
+                finalGrades.push(grade);
+            }
+        }
+    }
+    
+    if (finalGrades.length >= 3) {
+        const average = finalGrades.reduce((sum, g) => sum + Number(g), 0) / 3;
+        const className = getAverageClass(average, true);
+        
+        const averageCell = row.childNodes[row.childNodes.length - 1].firstChild;
+        averageCell.parentNode.classList.add(className);
+    }
+}
+
+// ============================================================
+// ОСНОВНЫЕ ФУНКЦИИ ОБРАБОТКИ
+// ============================================================
+
+/**
+ * Окрашивает всю таблицу журнала
+ * - Определяет режим отображения (обычный или итоговые отметки)
+ * - Очищает предыдущее окрашивание
+ * - Применяет окрашивание к каждой строке
+ * @param {HTMLTableSectionElement} tableBody - тело таблицы (tbody)
+ * @returns {void}
+ */
+function colorizeTable(tableBody) {
+    Utils.clearColoring(tableBody);
+    
+    const modeElement = document.querySelector(CONFIG.SELECTORS.MODAL_TRIGGER);
+    const modeTitle = modeElement?.getAttribute('title');
+    const isSummaryMode = modeTitle === 'Режим отображения итоговых отметок';
+    
+    const colorizeRow = isSummaryMode ? colorizeSummaryRow : colorizeStandardRow;
+    
+    for (const row of tableBody.childNodes) {
+        colorizeRow(row);
+    }
+}
+
+// ============================================================
+// ПОДСВЕТКА ФОРМ КОНТРОЛЯ
+// ============================================================
+
+/**
+ * Подсвечивает запрещённые для изменения формы контроля в заголовке таблицы
+ * - Находит все span элементы с указанным классом в thead
+ * - Проверяет текст на соответствие запрещённым формам
+ * - Применяет красный цвет к совпадениям
+ * @returns {void}
+ */
+function highlightControlForms() {
+    const selector = `thead span${CONFIG.CONTROL_FORMS.SPAN_CLASS}`;
+    const spans = document.querySelectorAll(selector);
+    
+    spans.forEach(span => {
+        const spanText = span.textContent.trim();
+        
+        if (CONFIG.CONTROL_FORMS.RESTRICTED.includes(spanText)) {
+            span.style.color = COLORS.RESTRICTED_CONTROL;
+            span.parentElement.style.background = COLORS.WARNING;
+        }
+    });
+}
+
+// ============================================================
+// ОСНОВНЫЕ ФУНКЦИИ ОБРАБОТКИ
+// ============================================================
+
+/**
+ * Основная функция обработки таблицы журнала
+ * - Ожидает появления таблицы
+ * - Обновляет состояние журнала
+ * - Запускает окрашивание
+ * - Подсвечивает запрещённые формы контроля
+ * - Устанавливает наблюдателя за изменениями
+ * @returns {void}
+ */
+function processJournalTable() {
+    const tables = document.querySelectorAll(CONFIG.SELECTORS.JOURNAL_TABLE);
+    
+    if (tables.length === 0) {
+        console.log('Таблица ещё не загружена, ожидание...');
+        setTimeout(processJournalTable, 1000);
+        return;
+    }
+    
+    console.log('Таблица найдена, начинаем обработку');
+    
+    const table = tables[0];
+    
+    JournalState.update(
+        table.firstChild, 
+        JournalState.watchElement.textContent
+    );
+    
+    colorizeTable(table.lastChild);
+    highlightControlForms();
+    
+    if (tableObserver) {
+        tableObserver.disconnect();
+    }
+    
+    tableObserver = new MutationObserver(() => processJournalTable());
+    tableObserver.observe(
+        document.querySelector(CONFIG.SELECTORS.MAIN_SECTION), 
+        { childList: true, subtree: true }
+    );
+}
+
+// ============================================================
+// TOOLTIP
+// ============================================================
+
+/** @type {HTMLElement|null} Текущий активный tooltip */
+let activeTooltip = null;
+
+/**
+ * Создаёт HTML-элемент badge для оценки
+ * @param {string} grade - оценка (2, 3, 4 или 5)
+ * @returns {HTMLSpanElement} span элемент с цветным badge
+ */
+function createGradeBadge(grade) {
+    const badge = document.createElement('span');
+    badge.className = `mscp-grade-badge mscp-badge-${grade}`;
+    badge.textContent = grade;
+    return badge;
+}
+
+/**
+ * Форматирует текст тултипа с цветными badge для оценок
+ * @param {string} text - исходный текст (например: 'До "4": 5 или 3, 4')
+ * @returns {DocumentFragment} фрагмент с HTML элементами
+ */
+function formatTooltipContent(text) {
+    const fragment = document.createDocumentFragment();
+    
+    // Парсим формат: До "X": ... или N пятёрок
+    const match = text.match(/До "(\d)": (.+)/);
+    
+    if (!match) {
+        // Если формат не распознан, возвращаем как есть
+        fragment.textContent = text;
+        return fragment;
+    }
+    
+    const targetGrade = match[1];
+    const comboText = match[2];
+    
+    // "До "
+    fragment.appendChild(document.createTextNode('До '));
+    
+    // Целевая оценка в badge
+    fragment.appendChild(createGradeBadge(targetGrade));
+    
+    // ": "
+    fragment.appendChild(document.createTextNode(': '));
+    
+    // Парсим комбинации
+    // Форматы: "5", "4 или 3, 5", "2 пятёрки", "3, 4"
+    if (comboText.includes('пятёр')) {
+        // Формула "N пятёрок" → "[5] × N"
+        const countMatch = comboText.match(/(\d+)\s*пятёр/);
+        if (countMatch) {
+            fragment.appendChild(createGradeBadge('5'));
+            fragment.appendChild(document.createTextNode(' × ' + countMatch[1]));
+        } else {
+            fragment.appendChild(document.createTextNode(comboText));
+        }
+    } else {
+        // Разбиваем по " или "
+        const options = comboText.split(' или ');
+        
+        options.forEach((option, optIndex) => {
+            if (optIndex > 0) {
+                fragment.appendChild(document.createTextNode(' или '));
+            }
+            
+            // Разбиваем по "," без пробела
+            const grades = option.split(',');
+            
+            grades.forEach((grade, gradeIndex) => {
+                if (gradeIndex > 0) {
+                    fragment.appendChild(document.createTextNode(','));
+                }
+                fragment.appendChild(createGradeBadge(grade.trim()));
+            });
+        });
+    }
+    
+    return fragment;
+}
+
+/**
+ * Показывает tooltip при наведении на ячейку
+ * @param {MouseEvent} event - событие наведения мыши
+ * @returns {void}
+ */
+function showTooltip(event) {
+    const cell = event.currentTarget;
+    const tooltipText = cell.dataset.tooltipText;
+    
+    if (!tooltipText) return;
+    
+    if (activeTooltip) {
+        activeTooltip.remove();
+    }
+    
+    const tooltip = document.createElement('div');
+    tooltip.className = 'mscp-tooltip-dynamic';
+    tooltip.appendChild(formatTooltipContent(tooltipText));
+    document.body.appendChild(tooltip);
+    
+    const rect = cell.getBoundingClientRect();
+    const tooltipRect = tooltip.getBoundingClientRect();
+    
+    let left = rect.left + rect.width / 2;
+    let top = rect.top - 8;
+    
+    const halfWidth = tooltipRect.width / 2;
+    
+    if (left - halfWidth < 10) {
+        left = halfWidth + 10;
+    } else if (left + halfWidth > window.innerWidth - 10) {
+        left = window.innerWidth - halfWidth - 10;
+    }
+    
+    if (top < tooltipRect.height + 10) {
+        top = rect.bottom + 8;
+        tooltip.classList.add('mscp-tooltip-below');
+    }
+    
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
+    
+    activeTooltip = tooltip;
+}
+
+/**
+ * Скрывает tooltip при уходе мыши
+ * @param {MouseEvent} event - событие ухода мыши
+ * @returns {void}
+ */
+function hideTooltip(event) {
+    if (activeTooltip) {
+        activeTooltip.remove();
+        activeTooltip = null;
+    }
+}
+/**
+ * ============================================================================
+ * ФАЙЛ: ui.js
+ * 
+ * Назначение: UI компоненты - стили, кнопки, модальное окно
+ * ============================================================================
+ */
+
+// ============================================================
+// СТИЛИ
+// ============================================================
+
+/**
+ * Создаёт и добавляет все CSS-стили для скрипта
+ * Включает стили для:
+ * - Окрашивания оценок (градиенты, сплошные цвета)
+ * - Tooltip (динамический, поверх всех элементов)
+ * - Кнопок управления
+ * - Модального окна настроек
+ * @returns {void}
+ */
+function createStyles() {
     const styleEl = document.createElement('style');
-    styleEl.innerHTML = `
-        .licey24_but {
+    styleEl.id = 'mscp-styles';
+    styleEl.textContent = `
+        /* =============================================
+           CSS-КЛАССЫ ДЛЯ ОКРАШИВАНИЯ ОЦЕНОК
+           ============================================= */
+        
+        /* Обычные ячейки с оценками - градиентная заливка */
+        .mscp-grade-5 {
+            background: linear-gradient(225deg, transparent, ${COLORS.GREEN} 70%);
+        }
+        .mscp-grade-4 {
+            background: linear-gradient(225deg, transparent, ${COLORS.BLUE} 70%);
+        }
+        .mscp-grade-3 {
+            background: linear-gradient(225deg, transparent, ${COLORS.YELLOW} 70%);
+        }
+        .mscp-grade-2 {
+            background: linear-gradient(225deg, transparent, ${COLORS.RED} 70%);
+        }
+        
+        /* Цепочка двоек - ярко-красная заливка */
+        .mscp-grade-bad {
+            background: radial-gradient(circle at right top, white 30%, rgb(255, 0, 0) 70%);
+        }
+        
+        /* Итоговые оценки - сплошной цвет */
+        .mscp-final-5 {
+            background-color: ${COLORS.GREEN};
+        }
+        .mscp-final-4 {
+            background-color: ${COLORS.BLUE};
+        }
+        .mscp-final-3 {
+            background-color: ${COLORS.YELLOW};
+        }
+        .mscp-final-2 {
+            background-color: ${COLORS.RED};
+        }
+        
+        /* Недостаточно оценок - красная полоса снизу */
+        .mscp-insufficient {
+            background: linear-gradient(180deg, transparent 70%, ${COLORS.RED});
+        }
+        
+        /* Средний балл */
+        .mscp-average-5 {
+            background-color: ${COLORS.GREEN};
+        }
+        .mscp-average-4 {
+            background-color: ${COLORS.BLUE};
+        }
+        .mscp-average-3 {
+            background-color: ${COLORS.YELLOW};
+        }
+        .mscp-average-2 {
+            background-color: ${COLORS.RED};
+        }
+        
+        /* Прогресс-бар */
+        .mscp-progress {
+            /* Динамический градиент задаётся через inline-стиль */
+        }
+        
+        /* Маркер для ячеек "почти достиг" */
+        .mscp-average-almost {
+            /* Градиент задаётся через inline-стиль */
+        }
+        
+        /* Ячейка с tooltip */
+        .mscp-tooltip-trigger {
+            cursor: help;
+        }
+        
+        /* =============================================
+           ДИНАМИЧЕСКИЙ TOOLTIP (поверх всех элементов)
+           ============================================= */
+        
+        .mscp-tooltip-dynamic {
+            position: fixed;
+            padding: 8px 12px;
+            background: white;
+            color: #333;
+            font-size: 13px;
+            font-weight: normal;
+            border-radius: 8px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15), 0 2px 4px rgba(0, 0, 0, 0.1);
+            z-index: 99999;
+            white-space: nowrap;
+            pointer-events: none;
+            transform: translate(-50%, -100%);
+            border: 1px solid rgba(0, 0, 0, 0.08);
+        }
+        
+        /* Стрелочка tooltip (сверху) */
+        .mscp-tooltip-dynamic::after {
+            content: '';
+            position: absolute;
+            bottom: -7px;
+            left: 50%;
+            transform: translateX(-50%);
+            border: 7px solid transparent;
+            border-top-color: white;
+        }
+        
+        /* Стрелочка tooltip (снизу) */
+        .mscp-tooltip-dynamic.mscp-tooltip-below {
+            transform: translate(-50%, 0);
+        }
+        
+        .mscp-tooltip-dynamic.mscp-tooltip-below::after {
+            bottom: auto;
+            top: -14px;
+            border-top-color: transparent;
+            border-bottom-color: white;
+        }
+        
+        /* Цветные badge для оценок в tooltip */
+        .mscp-grade-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 18px;
+            height: 18px;
+            padding: 0 5px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: 700;
+            margin: 0 1px;
+            vertical-align: middle;
+        }
+        
+        .mscp-grade-badge.mscp-badge-5 {
+            background-color: ${COLORS.GREEN};
+            color: #0d3d0d;
+        }
+        
+        .mscp-grade-badge.mscp-badge-4 {
+            background-color: ${COLORS.BLUE};
+            color: #0d2d4d;
+        }
+        
+        .mscp-grade-badge.mscp-badge-3 {
+            background-color: ${COLORS.YELLOW};
+            color: #4d4d0d;
+        }
+        
+        .mscp-grade-badge.mscp-badge-2 {
+            background-color: ${COLORS.RED};
+            color: #4d0d0d;
+        }
+        
+        /* =============================================
+           СТИЛИ КНОПОК
+           ============================================= */
+        
+        .mscp-button {
             line-height: 0;
             padding: 8px;
-            margin-left: -1px;
             border-color: #d6d6df;
             border-style: solid;
             border-width: 1px;
@@ -546,436 +1369,622 @@ function createButtonStyles() {
             background: white;
             cursor: pointer;
             transition: background 0.2s ease;
+            border-radius: 8px;
         }
-        .licey24_but:hover {
-            background: lightgrey;
+        .mscp-button:hover {
+            background: #ececec;
         }
-        .licey24_but:first-child {
-            border-radius: 8px 0 0 8px;
+        
+        /* =============================================
+           СТИЛИ МОДАЛЬНОГО ОКНА
+           ============================================= */
+        
+        .mscp-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            font-family: Arial, sans-serif;
         }
-        .licey24_but:last-child {
-            border-radius: 0 8px 8px 0;
+        .mscp-modal-window {
+            background-color: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            min-width: 320px;
+            max-width: 400px;
+            overflow: hidden;
+        }
+        .mscp-modal-header {
+            background-color: #f8f9fa;
+            padding: 20px 24px;
+            border-bottom: 1px solid #e9ecef;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .mscp-modal-title {
+            margin: 0;
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+        }
+        .mscp-close-btn {
+            background: none;
+            border: none;
+            font-size: 28px;
+            cursor: pointer;
+            color: #6c757d;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+        .mscp-close-btn:hover {
+            background-color: #e9ecef;
+            color: #333;
+        }
+        .mscp-modal-content {
+            padding: 24px;
+        }
+        .mscp-info-block {
+            padding: 12px 16px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #e9ecef;
+            font-size: 13px;
+            color: #495057;
+            line-height: 1.6;
+        }
+        .mscp-info-block div {
+            padding: 2px 0;
+        }
+        .mscp-info-label {
+            color: #6c757d;
+        }
+        .mscp-settings-group {
+            margin-top: 16px;
+        }
+        .mscp-settings-title {
+            font-size: 13px;
+            color: #6c757d;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+        .mscp-setting-item {
+            display: flex;
+            align-items: center;
+            padding: 4px 0;
+        }
+        .mscp-checkbox {
+            width: 16px;
+            height: 16px;
+            margin-right: 8px;
+            cursor: pointer;
+            accent-color: #496be8;
+        }
+        .mscp-label {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            font-size: 13px;
+            color: #333;
+        }
+        .mscp-action-buttons {
+            margin-top: 12px;
+            display: flex;
+            gap: 8px;
+        }
+        .mscp-btn-action {
+            flex: 1;
+            padding: 8px 12px;
+            background-color: #f8f9fa;
+            color: #495057;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            text-align: center;
+        }
+        .mscp-btn-action:hover {
+            background-color: #e9ecef;
+            border-color: #adb5bd;
+        }
+        .mscp-buttons-section {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            padding-top: 16px;
+            border-top: 1px solid #e9ecef;
+        }
+        .mscp-btn-primary {
+            padding: 10px 24px;
+            background-color: #496be8;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+        .mscp-btn-primary:hover {
+            background-color: #3a5bd0;
+            transform: translateY(-1px);
+        }
+        .mscp-btn-secondary {
+            padding: 10px 24px;
+            background-color: white;
+            color: #495057;
+            border: 1px solid #6c757d;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+        .mscp-btn-secondary:hover {
+            background-color: #f8f9fa;
+            border-color: #495057;
         }
     `;
     document.head.appendChild(styleEl);
 }
 
-/**
- * Создает контейнер с кнопками
- */
-function createButtons() {
-    const buttonContainer = document.createElement('div');
-    buttonContainer.style.cssText = 'box-shadow: 1px 1px 4px 0px rgba(0, 0, 0, 0.07); border-radius: 8px; display: inline-flex;';
-
-    const buttons = [
-        {
-            html: createBrushIcon(),
-            style: '',
-            clickHandler: getHim,
-            title: 'Принудительная покраска'
-        },
-        {
-            html: createInfoIcon(),
-            style: '',
-            clickHandler: createModalWindow,
-            title: 'Информация о обработке'
-        },
-        {
-            html: createExcelIcon(),
-            style: '',
-            clickHandler: downloadAsFile,
-            title: 'Копировать в Excel'
-        }
-    ];
-
-    buttons.forEach((buttonConfig, index) => {
-        const button = createButton(buttonConfig, index);
-        buttonContainer.append(button);
-    });
-
-    WATCH_ELEMENT.append(buttonContainer);
-}
+// ============================================================
+// SVG ИКОНКИ
+// ============================================================
 
 /**
- * Создает отдельную кнопку
+ * Создаёт SVG-иконку настроек (шестерёнка с кистью)
+ * @returns {string} HTML-строка с SVG-элементом
  */
-function createButton(config, index) {
-    const button = document.createElement('button');
-    button.classList.add('licey24_but');
-    button.innerHTML = config.html;
-    button.title = config.title;
-    button.style.cssText = config.style;
-    button.addEventListener('click', config.clickHandler);
-
-    return button;
-}
-
-/**
- * Создает SVG иконку кисти
- */
-function createBrushIcon() {
+function createSettingsIcon() {
     return `
-        <svg class="bi-brush" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
-            <path d="M15.825.12a.5.5 0 0 1 .132.584c-1.53 3.43-4.743 8.17-7.095 10.64a6.1 6.1 0 0 1-2.373 1.534c-.018.227-.06.538-.16.868-.201.659-.667 1.479-1.708 1.74a8.1 8.1 0 0 1-3.078.132 4 4 0 0 1-.562-.135 1.4 1.4 0 0 1-.466-.247.7.7 0 0 1-.204-.288.62.62 0 0 1 .004-.443c.095-.245.316-.38.461-.452.394-.197.625-.453.867-.826.095-.144.184-.297.287-.472l.117-.198c.151-.255.326-.54.546-.848.528-.739 1.201-.925 1.746-.896q.19.012.348.048c.062-.172.142-.38.238-.608.261-.619.658-1.419 1.187-2.069 2.176-2.67 6.18-6.206 9.117-8.104a.5.5 0 0 1 .596.04M4.705 11.912a1.2 1.2 0 0 0-.419-.1c-.246-.013-.573.05-.879.479-.197.275-.355.532-.5.777l-.105.177c-.106.181-.213.362-.32.528a3.4 3.4 0 0 1-.76.861c.69.112 1.736.111 2.657-.12.559-.139.843-.569.993-1.06a3 3 0 0 0 .126-.75zm1.44.026c.12-.04.277-.1.458-.183a5.1 5.1 0 0 0 1.535-1.1c1.9-1.996 4.412-5.57 6.052-8.631-2.59 1.927-5.566 4.66-7.302 6.792-.442.543-.795 1.243-1.042 1.826-.121.288-.214.54-.275.72v.001l.575.575zm-4.973 3.04.007-.005zm3.582-3.043.002.001h-.002z"></path>
+        <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="20" height="20" version="1.1" viewBox="0 0 32 32">
             <defs>
-                <linearGradient id="MyGradient">
-                    <stop offset="0%" stop-color="green" />
-                    <stop offset="50%" stop-color="blue" />
-                    <stop offset="100%" stop-color="red" />
+                <linearGradient id="mscp-gradient" x1="6.0911" x2="25.908" y1="26.626" y2="5.3748" gradientUnits="userSpaceOnUse">
+                    <stop stop-color="#ff0063" offset="0"></stop>
+                    <stop stop-color="#fdff00" offset=".32325"></stop>
+                    <stop stop-color="#0c0aff" offset=".35364"></stop>
+                    <stop stop-color="#0200ff" offset=".51622"></stop>
+                    <stop offset=".52463"></stop>
                 </linearGradient>
             </defs>
-            <style type="text/css">.bi-brush{fill:url(#MyGradient)}</style>
+            <g transform="matrix(1.1018 0 0 1.2006 -1.6207 -3.2015)">
+                <g transform="matrix(1.3333 0 0 1.3333 3.7785e-5 4e-7)" fill="#909090">
+                    <path d="m10 2c-0.55228 0-1 0.44772-1 1v1.5818c-0.69525 0.2814-1.3415 0.65745-1.9229 1.1119l-1.3713-0.79172c-0.22968-0.13261-0.50264-0.16855-0.75882-0.09991-0.25618 0.06865-0.47459 0.23625-0.6072 0.46593l-2 3.4641c-0.27614 0.47829-0.11227 1.0899 0.36602 1.366l1.3708 0.7914c-0.05051 0.3633-0.07657 0.7341-0.07657 1.1105s0.02606 0.7471 0.07657 1.1105l-1.3708 0.7914c-0.22969 0.1326-0.39728 0.351-0.46593 0.6072-0.06864 0.2562-0.03271 0.5291 0.0999 0.7588l2 3.4641c0.13261 0.2297 0.35103 0.3973 0.60721 0.466 0.25618 0.0686 0.52913 0.0327 0.75882-0.0999l1.3713-0.7918c0.5814 0.4544 1.2277 0.8305 1.9229 1.1119v1.5818c0 0.5523 0.44772 1 1 1h4c0.5522 0 1-0.4477 1-1v-1.5818c0.6952-0.2814 1.3415-0.6575 1.9229-1.1119l1.3713 0.7918c0.2297 0.1326 0.5026 0.1685 0.7588 0.0999 0.2562-0.0687 0.4746-0.2363 0.6072-0.4659l2-3.4641c0.1326-0.2297 0.1686-0.5027 0.0999-0.7589-0.0686-0.2561-0.2362-0.4746-0.4659-0.6072l-1.3708-0.7914c0.0505-0.3633 0.0766-0.7341 0.0766-1.1105s-0.0261-0.7472-0.0766-1.1105l1.3708-0.7914c0.4783-0.27619 0.6422-0.88778 0.366-1.3661l-2-3.4641c-0.1326-0.22969-0.351-0.39728-0.6072-0.46593-0.2562-0.06864-0.5291-0.03271-0.7588 0.0999l-1.3713 0.79174c-0.5814-0.45442-1.2277-0.83046-1.9229-1.1119v-1.5818c0-0.55228-0.4478-1-1-1zm1 3.2899v-1.2899h2v1.2899c0 0.44242 0.2907 0.83225 0.7147 0.95845 0.9111 0.27116 1.7328 0.75367 2.4076 1.392 0.3213 0.30395 0.8041 0.3607 1.1872 0.13955l1.1187-0.64589 1 1.732-1.1173 0.64507c-0.3828 0.22098-0.5751 0.66703-0.473 1.097 0.1058 0.4457 0.1621 0.9116 0.1621 1.3919s-0.0563 0.9462-0.1621 1.3919c-0.1021 0.43 0.0902 0.876 0.473 1.097l1.1173 0.6451-1 1.732-1.1188-0.6459c-0.383-0.2211-0.8658-0.1644-1.1872 0.1396-0.6747 0.6383-1.4964 1.1208-2.4075 1.3919-0.424 0.1262-0.7147 0.5161-0.7147 0.9585v1.2899h-2v-1.2899c0-0.4424-0.2908-0.8323-0.7148-0.9585-0.91111-0.2711-1.7327-0.7536-2.4075-1.3919-0.32132-0.304-0.80415-0.3607-1.1872-0.1396l-1.1187 0.6459-1-1.732 1.1173-0.6451c0.38275-0.221 0.57504-0.667 0.47296-1.097-0.1058-0.4457-0.16204-0.9116-0.16204-1.3919s0.05623-0.9462 0.16204-1.3919c0.10208-0.43-0.09022-0.87603-0.47296-1.097l-1.1173-0.64506 1-1.732 1.1187 0.64588c0.38305 0.22115 0.86587 0.16439 1.1872-0.13956 0.67479-0.63831 1.4964-1.1208 2.4075-1.392 0.424-0.1262 0.7148-0.51603 0.7148-0.95845zm-1 6.7101c0-1.1046 0.89542-2 2-2s2 0.8954 2 2-0.8954 2-2 2-2-0.8954-2-2zm2-4c-2.2092 0-4 1.7909-4 4 0 2.2091 1.7909 4 4 4 2.2091 0 4-1.7909 4-4 0-2.2091-1.7909-4-4-4z" clip-rule="evenodd" fill="#909090" fill-rule="evenodd"></path>
+                </g>
+                <path d="m27.555 8.42c-1.355 1.647-5.07 6.195-8.021 9.81l-3.747-3.804c3.389-3.016 7.584-6.744 9.1-8.079 2.697-2.377 5.062-3.791 5.576-3.213 0.322 0.32-0.533 2.396-2.908 5.286zm-8.676 10.61c-1.143 1.399-2.127 2.604-2.729 3.343l-4.436-4.323c0.719-0.64 1.916-1.705 3.304-2.939zm-3.39 4.153v-0.012c-2.575 9.88-14.018 4.2-14.018 4.2s4.801 0.605 4.801-3.873c0-4.341 4.412-4.733 4.683-4.753l4.543 4.427c0 1e-3 -9e-3 0.011-9e-3 0.011z" fill="url(#mscp-gradient)" style="mix-blend-mode:normal"></path>
+            </g>
         </svg>
     `;
 }
 
+// ============================================================
+// КНОПКИ
+// ============================================================
+
 /**
- * Создает SVG иконку информации
+ * Создаёт кнопку настроек и добавляет в DOM
+ * @param {HTMLElement} parentElement - элемент, в который добавляется кнопка
+ * @returns {void}
  */
-function createInfoIcon() {
-    return `
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-info-circle" viewBox="0 0 16 16">
-            <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
-            <path d="m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0"/>
-        </svg>
-    `;
+function createButtons(parentElement) {
+    const buttonContainer = document.createElement('div');
+    buttonContainer.style.cssText = 'box-shadow: 1px 1px 4px 0px rgba(0, 0, 0, 0.07); border-radius: 8px; display: inline-flex;';
+    
+    const button = document.createElement('button');
+    button.className = 'mscp-button';
+    button.innerHTML = createSettingsIcon();
+    button.title = 'Настройки покраса';
+    button.addEventListener('click', showModal);
+    buttonContainer.appendChild(button);
+    
+    parentElement.appendChild(buttonContainer);
 }
 
 /**
- * Создает SVG иконку Excel
+ * Вставляет кнопки управления в заголовок журнала
+ * - Ожидает загрузки DOM-элементов
+ * - Создаёт стили и кнопки
+ * - Применяет настройки (баннер, средний балл)
+ * - Запускает обработку таблицы
+ * @returns {void}
  */
-function createExcelIcon() {
-    return `
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-file-earmark-spreadsheet" viewBox="0 0 16 16">
-            <path d="M14 14V4.5L9.5 0H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2M9.5 3A1.5 1.5 0 0 0 11 4.5h2V9H3V2a1 1 0 0 1 1-1h5.5zM3 12v-2h2v2zm0 1h2v2H4a1 1 0 0 1-1-1zm3 2v-2h3v2zm4 0v-2h3v1a1 1 0 0 1-1 1zm3-3h-3v-2h3zm-7 0v-2h3v2z"/>
-        </svg>
-    `;
+function insertButtons() {
+    if (document.querySelector('.mscp-button')) return;
+    
+    const mainSection = document.querySelector(CONFIG.SELECTORS.MAIN_SECTION);
+    if (!mainSection) {
+        console.log('Контейнер для кнопок не найден, ожидание...');
+        setTimeout(insertButtons, 1000);
+        return;
+    }
+    
+    const parentElement = document.querySelector(CONFIG.SELECTORS.PARENT_BUTTON_CONTAINER);
+    if (!parentElement) {
+        setTimeout(insertButtons, 1000);
+        return;
+    }
+    
+    const h6Element = parentElement.querySelector('h6');
+    if (!h6Element) {
+        setTimeout(insertButtons, 1000);
+        return;
+    }
+    
+    console.log('Вставляем кнопки управления');
+    
+    JournalState.watchElement = h6Element.parentNode;
+    
+    createStyles();
+    createButtons(JournalState.watchElement);
+    
+    // Применяем настройки
+    const settings = loadSettings();
+    JournalState.settings = settings;
+    
+    // Удаляем баннер если включено
+    if (settings.hideBanner) {
+        removeBannerAndSetHeight();
+    }
+    
+    processJournalTable();
 }
 
-// File: modalWind.js
+// ============================================================
+// ЭКСПОРТ В EXCEL
+// ============================================================
+
 /**
- * Создает модальное окно с настройками
+ * Скачивает таблицу журнала как HTML-файл
+ * @returns {void}
  */
-function createModalWindow() {
-    // Создаем элементы модального окна
-    const modalOverlay = document.createElement('div');
-    const modalWindow = document.createElement('div');
-    const modalHeader = document.createElement('div');
-    const modalTitle = document.createElement('h2');
-    const closeButton = document.createElement('button');
-    const modalContent = document.createElement('div');
+function downloadAsFile() {
+    const table = document.querySelector(CONFIG.SELECTORS.JOURNAL_TABLE);
+    if (!table) return;
+    
+    const link = document.createElement('a');
+    const file = new Blob([table.outerHTML], { type: 'text/html' });
+    
+    link.href = URL.createObjectURL(file);
+    link.download = 'journal_export.html';
+    link.click();
+    link.remove();
+}
 
-    // Создаем элементы для отображения информации
-    const infoSection = document.createElement('div');
-    const lessonsInfo = document.createElement('div');
-    const gradesInfo = document.createElement('div');
-    const roundingInfo = document.createElement('div');
+// ============================================================
+// МОДАЛЬНОЕ ОКНО
+// ============================================================
 
-    // Создаем настройки с галочками
-    const settingsSection = document.createElement('div');
-    const setting1Container = document.createElement('div');
-    const setting1Label = document.createElement('label');
-    const setting1Checkbox = document.createElement('input');
-    const setting1Text = document.createElement('span');
+/**
+ * Создаёт секцию с информацией о журнале
+ * @returns {HTMLElement} DOM-элемент с информацией
+ */
+function createInfoSection() {
+    const section = document.createElement('div');
+    section.className = 'mscp-info-block';
+    
+    const roundingMethod = JournalState.isMathRound 
+        ? 'математический (4,5)' 
+        : 'лицейский (4,65)';
+    const gradesRequired = JournalState.isWeNeed3Grades ? '3' : '5';
+    
+    section.innerHTML = `
+        <div><span class="mscp-info-label">Версия:</span> ${VERSION}</div>
+        <div><span class="mscp-info-label">Уроков в триместре:</span> ${JournalState.countLessons}</div>
+        <div><span class="mscp-info-label">Нужно оценок:</span> ${gradesRequired}</div>
+        <div><span class="mscp-info-label">Округление:</span> ${roundingMethod}</div>
+    `;
+    
+    return section;
+}
 
-    const setting2Container = document.createElement('div');
-    const setting2Label = document.createElement('label');
-    const setting2Checkbox = document.createElement('input');
-    const setting2Text = document.createElement('span');
+/**
+ * Создаёт секцию с настройками (чекбоксы и кнопки действий)
+ * @param {Object} currentSettings - текущие настройки
+ * @returns {HTMLElement} DOM-элемент с настройками
+ */
+function createSettingsSection(currentSettings) {
+    const section = document.createElement('div');
+    section.className = 'mscp-settings-group';
+    
+    // Секция "Цветной режим для:"
+    const colorTitle = document.createElement('div');
+    colorTitle.className = 'mscp-settings-title';
+    colorTitle.textContent = 'Цветной режим для:';
+    section.appendChild(colorTitle);
+    
+    const colorSettings = [
+        { key: 'colorAccumulation', label: 'Накопляемость оценок', checked: currentSettings.colorAccumulation },
+        { key: 'colorLessonGrades', label: 'Оценки за уроки', checked: currentSettings.colorLessonGrades },
+        { key: 'colorAverageGrade', label: 'Средний балл', checked: currentSettings.colorAverageGrade },
+        { key: 'colorBorderlineGrades', label: 'Пограничные оценки', checked: currentSettings.colorBorderlineGrades }
+    ];
+    
+    colorSettings.forEach(setting => {
+        const item = document.createElement('div');
+        item.className = 'mscp-setting-item';
+        item.innerHTML = `
+            <label class="mscp-label">
+                <input type="checkbox" class="mscp-checkbox" data-key="${setting.key}" ${setting.checked ? 'checked' : ''}>
+                <span>${setting.label}</span>
+            </label>
+        `;
+        section.appendChild(item);
+    });
+    
+    // Секция "Дополнительно"
+    const extraTitle = document.createElement('div');
+    extraTitle.className = 'mscp-settings-title';
+    extraTitle.style.marginTop = '12px';
+    extraTitle.textContent = 'Дополнительно:';
+    section.appendChild(extraTitle);
+    
+    const extraSettings = [
+        { key: 'hideAverageMark', label: 'Выключать средний балл', checked: currentSettings.hideAverageMark },
+        { key: 'hideBanner', label: 'Убрать баннер', checked: currentSettings.hideBanner }
+    ];
+    
+    extraSettings.forEach(setting => {
+        const item = document.createElement('div');
+        item.className = 'mscp-setting-item';
+        item.innerHTML = `
+            <label class="mscp-label">
+                <input type="checkbox" class="mscp-checkbox" data-key="${setting.key}" ${setting.checked ? 'checked' : ''}>
+                <span>${setting.label}</span>
+            </label>
+        `;
+        section.appendChild(item);
+    });
+    
+    // Кнопки действий
+    const actionButtons = document.createElement('div');
+    actionButtons.className = 'mscp-action-buttons';
+    actionButtons.innerHTML = `
+        <button class="mscp-btn-action" data-action="download">Скачать журнал</button>
+        <button class="mscp-btn-action" data-action="removeHeader">Удалить шапку</button>
+    `;
+    section.appendChild(actionButtons);
+    
+    // Обработчики кнопок
+    actionButtons.querySelector('[data-action="download"]').addEventListener('click', () => {
+        downloadAsFile();
+    });
+    actionButtons.querySelector('[data-action="removeHeader"]').addEventListener('click', () => {
+        removeHeaderAndSetHeight();
+    });
+    
+    return section;
+}
 
-    const setting3Container = document.createElement('div');
-    const setting3Label = document.createElement('label');
-    const setting3Checkbox = document.createElement('input');
-    const setting3Text = document.createElement('span');
-
-    // Создаем кнопки
-    const buttonsSection = document.createElement('div');
-    const applyButton = document.createElement('button');
+/**
+ * Создаёт секцию с кнопками "Отмена" и "Применить"
+ * @param {HTMLElement} modalOverlay - оверлей модального окна
+ * @param {HTMLElement} settingsSection - секция с настройками (для чтения чекбоксов)
+ * @returns {HTMLElement} DOM-элемент с кнопками
+ */
+function createModalButtons(modalOverlay, settingsSection) {
+    const section = document.createElement('div');
+    section.className = 'mscp-buttons-section';
+    
     const cancelButton = document.createElement('button');
-
-    // Загружаем текущие настройки
-    const currentSettings = loadSettings();
-
-    // Стили для оверлея
-    modalOverlay.style.position = 'fixed';
-    modalOverlay.style.top = '0';
-    modalOverlay.style.left = '0';
-    modalOverlay.style.width = '100%';
-    modalOverlay.style.height = '100%';
-    modalOverlay.style.backgroundColor = 'rgba(0, 0, 0, 0.6)';
-    modalOverlay.style.display = 'flex';
-    modalOverlay.style.justifyContent = 'center';
-    modalOverlay.style.alignItems = 'center';
-    modalOverlay.style.zIndex = '1000';
-    modalOverlay.style.fontFamily = 'Arial, sans-serif';
-
-    // Стили для модального окна
-    modalWindow.style.backgroundColor = 'white';
-    modalWindow.style.borderRadius = '12px';
-    modalWindow.style.boxShadow = '0 10px 30px rgba(0, 0, 0, 0.3)';
-    modalWindow.style.minWidth = '450px';
-    modalWindow.style.maxWidth = '500px';
-    modalWindow.style.overflow = 'hidden';
-    modalWindow.style.position = 'relative';
-
-    // Стили для заголовка
-    modalHeader.style.backgroundColor = '#f8f9fa';
-    modalHeader.style.padding = '20px 24px';
-    modalHeader.style.borderBottom = '1px solid #e9ecef';
-    modalHeader.style.display = 'flex';
-    modalHeader.style.justifyContent = 'space-between';
-    modalHeader.style.alignItems = 'center';
-
-    modalTitle.textContent = 'Настройки дополнения My School Color Point';
-    modalTitle.style.margin = '0';
-    modalTitle.style.fontSize = '18px';
-    modalTitle.style.fontWeight = '600';
-    modalTitle.style.color = '#333';
-
-    // Стили для кнопки закрытия (крестик) - увеличенная версия
-    closeButton.innerHTML = '&times;';
-    closeButton.style.background = 'none';
-    closeButton.style.border = 'none';
-    closeButton.style.fontSize = '28px';
-    closeButton.style.cursor = 'pointer';
-    closeButton.style.color = '#6c757d';
-    closeButton.style.width = '40px';
-    closeButton.style.height = '40px';
-    closeButton.style.borderRadius = '50%';
-    closeButton.style.display = 'flex';
-    closeButton.style.alignItems = 'center';
-    closeButton.style.justifyContent = 'center';
-    closeButton.style.transition = 'all 0.2s ease';
-
-    closeButton.addEventListener('mouseenter', function () {
-        closeButton.style.backgroundColor = '#e9ecef';
-        closeButton.style.color = '#333';
-    });
-
-    closeButton.addEventListener('mouseleave', function () {
-        closeButton.style.backgroundColor = 'transparent';
-        closeButton.style.color = '#6c757d';
-    });
-
-    // Стили для контента
-    modalContent.style.padding = '24px';
-
-    // Стили для информационных блоков
-    infoSection.style.marginBottom = '24px';
-
-    const infoItemStyle = {
-        padding: '12px 16px',
-        marginBottom: '8px',
-        backgroundColor: '#f8f9fa',
-        borderRadius: '8px',
-        border: '1px solid #e9ecef',
-        fontSize: '14px',
-        color: '#495057'
-    };
-
-    Object.assign(lessonsInfo.style, infoItemStyle);
-    Object.assign(gradesInfo.style, infoItemStyle);
-    Object.assign(roundingInfo.style, infoItemStyle);
-
-    let roundingMethod = JOURNAL_INFO.isMathRound ? "математический (4,5)" : "лицейский (4,65)"
-    let gradesRequired = JOURNAL_INFO.isWeNeed3Grades ? "3" : "5"
-    lessonsInfo.innerHTML = `<strong>Количество уроков в триместре:</strong> ${JOURNAL_INFO.countLessons}`;
-    gradesInfo.innerHTML = `<strong>Необходимо набрать оценок:</strong> ${gradesRequired}`;
-    roundingInfo.innerHTML = `<strong>Выбран метод округления:</strong> ${roundingMethod}`;
-
-    infoSection.appendChild(lessonsInfo);
-    infoSection.appendChild(gradesInfo);
-    infoSection.appendChild(roundingInfo);
-
-    // Стили для секции настроек
-    settingsSection.style.marginBottom = '24px';
-
-    const settingContainerStyle = {
-        display: 'flex',
-        alignItems: 'center',
-        padding: '14px 0',
-        borderBottom: '1px solid #f1f3f4'
-    };
-
-    Object.assign(setting1Container.style, settingContainerStyle);
-    Object.assign(setting2Container.style, settingContainerStyle);
-    Object.assign(setting3Container.style, settingContainerStyle);
-
-    // Стили для галочек
-    setting1Checkbox.type = 'checkbox';
-    setting2Checkbox.type = 'checkbox';
-    setting3Checkbox.type = 'checkbox';
-
-    const checkboxStyle = {
-        width: '18px',
-        height: '18px',
-        marginRight: '12px',
-        cursor: 'pointer',
-        accentColor: '#496be8'
-    };
-
-    Object.assign(setting1Checkbox.style, checkboxStyle);
-    Object.assign(setting2Checkbox.style, checkboxStyle);
-    Object.assign(setting3Checkbox.style, checkboxStyle);
-
-    // Устанавливаем состояния чекбоксов из сохраненных настроек
-    setting1Checkbox.checked = currentSettings.colorMode || false;
-    setting2Checkbox.checked = currentSettings.highlightMode || false;
-    setting3Checkbox.checked = currentSettings.hideAverageMark || true;
-
-    // Стили для текста настроек
-    setting1Text.textContent = 'Цветной режим (в разработке...)';
-    setting2Text.textContent = 'Подсветка пограничных оценок (в разработке...)';
-    setting3Text.textContent = 'Выключать столбец средний балл (работает)' ;
-
-    const textStyle = {
-        fontSize: '14px',
-        color: '#333',
-        cursor: 'pointer',
-        fontWeight: '500'
-    };
-
-    Object.assign(setting1Text.style, textStyle);
-    Object.assign(setting2Text.style, textStyle);
-    Object.assign(setting3Text.style, textStyle);
-
-    // Собираем настройки
-    setting1Label.style.display = 'flex';
-    setting1Label.style.alignItems = 'center';
-    setting1Label.style.cursor = 'pointer';
-    setting1Label.appendChild(setting1Checkbox);
-    setting1Label.appendChild(setting1Text);
-
-    setting2Label.style.display = 'flex';
-    setting2Label.style.alignItems = 'center';
-    setting2Label.style.cursor = 'pointer';
-    setting2Label.appendChild(setting2Checkbox);
-    setting2Label.appendChild(setting2Text);
-
-    setting3Label.style.display = 'flex';
-    setting3Label.style.alignItems = 'center';
-    setting3Label.style.cursor = 'pointer';
-    setting3Label.appendChild(setting3Checkbox);
-    setting3Label.appendChild(setting3Text);
-
-    setting1Container.appendChild(setting1Label);
-    setting2Container.appendChild(setting2Label);
-    setting3Container.appendChild(setting3Label);
-
-    settingsSection.appendChild(setting1Container);
-    settingsSection.appendChild(setting2Container);
-    settingsSection.appendChild(setting3Container);
-
-    // Стили для секции кнопок
-    buttonsSection.style.display = 'flex';
-    buttonsSection.style.justifyContent = 'flex-end';
-    buttonsSection.style.gap = '12px';
-    buttonsSection.style.paddingTop = '16px';
-    buttonsSection.style.borderTop = '1px solid #e9ecef';
-
-    // Стили для кнопки "Применить"
-    applyButton.textContent = 'Применить';
-    applyButton.style.padding = '10px 24px';
-    applyButton.style.backgroundColor = '#496be8';
-    applyButton.style.color = 'white';
-    applyButton.style.border = 'none';
-    applyButton.style.borderRadius = '6px';
-    applyButton.style.cursor = 'pointer';
-    applyButton.style.fontSize = '14px';
-    applyButton.style.fontWeight = '500';
-    applyButton.style.transition = 'all 0.2s ease';
-
-    applyButton.addEventListener('mouseenter', function () {
-        applyButton.style.backgroundColor = '#3a5bd0';
-        applyButton.style.transform = 'translateY(-1px)';
-    });
-
-    applyButton.addEventListener('mouseleave', function () {
-        applyButton.style.backgroundColor = '#496be8';
-        applyButton.style.transform = 'translateY(0)';
-    });
-
-    // Стили для кнопки "Отмена"
+    cancelButton.className = 'mscp-btn-secondary';
     cancelButton.textContent = 'Отмена';
-    cancelButton.style.padding = '10px 24px';
-    cancelButton.style.backgroundColor = 'white';
-    cancelButton.style.color = '#495057';
-    cancelButton.style.border = '1px solid #6c757d';
-    cancelButton.style.borderRadius = '6px';
-    cancelButton.style.cursor = 'pointer';
-    cancelButton.style.fontSize = '14px';
-    cancelButton.style.fontWeight = '500';
-    cancelButton.style.transition = 'all 0.2s ease';
-
-    cancelButton.addEventListener('mouseenter', function () {
-        cancelButton.style.backgroundColor = '#f8f9fa';
-        cancelButton.style.borderColor = '#495057';
-    });
-
-    cancelButton.addEventListener('mouseleave', function () {
-        cancelButton.style.backgroundColor = 'white';
-        cancelButton.style.borderColor = '#6c757d';
-    });
-
-    buttonsSection.appendChild(cancelButton);
-    buttonsSection.appendChild(applyButton);
-
-    // Собираем модальное окно
-    modalHeader.appendChild(modalTitle);
-    modalHeader.appendChild(closeButton);
-
-    modalContent.appendChild(infoSection);
-    modalContent.appendChild(settingsSection);
-    modalContent.appendChild(buttonsSection);
-
-    modalWindow.appendChild(modalHeader);
-    modalWindow.appendChild(modalContent);
-    modalOverlay.appendChild(modalWindow);
-
-    // Обработчики событий
-    closeButton.addEventListener('click', function () {
-        document.body.removeChild(modalOverlay);
-    });
-
-    cancelButton.addEventListener('click', function () {
-        document.body.removeChild(modalOverlay);
-    });
-
-    applyButton.addEventListener('click', function () {
-        // Сохраняем настройки
-        const newSettings = {
-            colorMode: setting1Checkbox.checked,
-            highlightMode: setting2Checkbox.checked,
-            hideAverageMark: setting3Checkbox.checked
-        };
+    cancelButton.addEventListener('click', () => modalOverlay.remove());
+    
+    const applyButton = document.createElement('button');
+    applyButton.className = 'mscp-btn-primary';
+    applyButton.textContent = 'Применить';
+    applyButton.addEventListener('click', () => {
+        const newSettings = {};
+        settingsSection.querySelectorAll('.mscp-checkbox').forEach(checkbox => {
+            newSettings[checkbox.dataset.key] = checkbox.checked;
+        });
         
         saveSettings(newSettings);
+        JournalState.settings = newSettings;
         
         // Применяем настройки скрытия среднего балла
         if (newSettings.hideAverageMark) {
-            setLocalStorageParam();
+            applyHideAverageMarkSetting();
         }
         
+        // Применяем настройку удаления баннера
+        if (newSettings.hideBanner) {
+            removeBannerAndSetHeight();
+        }
+        
+        // Перерисовываем таблицу с новыми настройками
+        processJournalTable();
+        
         console.log('Настройки сохранены:', newSettings);
-        document.body.removeChild(modalOverlay);
+        modalOverlay.remove();
     });
+    
+    section.appendChild(cancelButton);
+    section.appendChild(applyButton);
+    
+    return section;
+}
 
-    // Закрытие по клику на оверлей
-    modalOverlay.addEventListener('click', function (event) {
-        if (event.target === modalOverlay) {
-            document.body.removeChild(modalOverlay);
+/**
+ * Показывает модальное окно с настройками
+ * - Загружает текущие настройки
+ * - Создаёт DOM-структуру окна
+ * - Добавляет обработчики закрытия (крестик, оверлей, Escape)
+ * @returns {void}
+ */
+function showModal() {
+    const currentSettings = loadSettings();
+    
+    const overlay = document.createElement('div');
+    overlay.className = 'mscp-modal-overlay';
+    
+    const window = document.createElement('div');
+    window.className = 'mscp-modal-window';
+    
+    const header = document.createElement('div');
+    header.className = 'mscp-modal-header';
+    header.innerHTML = `
+        <h2 class="mscp-modal-title">Настройки дополнения My School Color Point</h2>
+        <button class="mscp-close-btn">&times;</button>
+    `;
+    
+    const content = document.createElement('div');
+    content.className = 'mscp-modal-content';
+    
+    const infoSection = createInfoSection();
+    const settingsSection = createSettingsSection(currentSettings);
+    const buttonsSection = createModalButtons(overlay, settingsSection);
+    
+    content.append(infoSection, settingsSection, buttonsSection);
+    window.append(header, content);
+    overlay.appendChild(window);
+    
+    header.querySelector('.mscp-close-btn').addEventListener('click', () => overlay.remove());
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) overlay.remove();
+    });
+    
+    const handleEscape = (e) => {
+        if (e.key === 'Escape' && document.body.contains(overlay)) {
+            overlay.remove();
+            document.removeEventListener('keydown', handleEscape);
+        }
+    };
+    document.addEventListener('keydown', handleEscape);
+    
+    document.body.appendChild(overlay);
+}
+/**
+ * ============================================================================
+ * ФАЙЛ: main.user.js
+ * 
+ * Назначение: Точка входа + инициализация скрипта
+ * 
+ * Структура проекта:
+ * - config.js    — константы и конфигурация
+ * - coloring.js  — логика окрашивания и расчёты
+ * - ui.js        — компоненты интерфейса
+ * - main.user.js — точка входа (этот файл)
+ * ============================================================================
+ */
+
+// ============================================================
+// ИНИЦИАЛИЗАЦИЯ
+// ============================================================
+
+/**
+ * Проверяет, соответствует ли URL целевой странице журнала
+ * @param {string} url - URL для проверки
+ * @returns {boolean} true, если URL соответствует странице журнала
+ */
+function isTargetUrl(url) {
+    return CONFIG.URL_PATTERN.test(url);
+}
+
+/**
+ * Инициализирует скрипт на странице журнала
+ * - Выводит сообщение о версии
+ * - Сбрасывает состояние журнала
+ * - Запускает вставку кнопок (с задержкой 1с)
+ * - Применяет настройку скрытия среднего балла
+ * @returns {void}
+ */
+function initOnJournalPage() {
+    console.log(`My School Color Point v${VERSION} — Инициализация...`);
+    JournalState.reset();
+    setTimeout(insertButtons, 1000);
+    applyHideAverageMarkSetting();
+}
+
+/**
+ * Запускает мониторинг URL для SPA-навигации
+ * 
+ * Поскольку "Моя Школа" — SPA-приложение, навигация происходит без перезагрузки страницы.
+ * Эта функция:
+ * - Проверяет текущий URL при загрузке
+ * - Перехватывает history.pushState и history.replaceState
+ * - Отслеживает popstate (навигация браузера)
+ * - Отслеживает клики по ссылкам
+ * 
+ * При каждом изменении URL проверяет, соответствует ли он странице журнала,
+ * и если да — инициализирует скрипт.
+ * @returns {void}
+ */
+function initUrlMonitor() {
+    let currentUrl = window.location.href;
+    
+    // Проверяем текущий URL при загрузке
+    if (isTargetUrl(currentUrl)) {
+        initOnJournalPage();
+    }
+    
+    // Перехватываем history API для отслеживания навигации
+    const originalPushState = history.pushState;
+    const originalReplaceState = history.replaceState;
+    
+    history.pushState = function(...args) {
+        originalPushState.apply(this, args);
+        handleUrlChange();
+    };
+    
+    history.replaceState = function(...args) {
+        originalReplaceState.apply(this, args);
+        handleUrlChange();
+    };
+    
+    // Отслеживаем навигацию браузера
+    window.addEventListener('popstate', handleUrlChange);
+    
+    // Дополнительно отслеживаем клики по ссылкам
+    document.addEventListener('click', (event) => {
+        const link = event.target.closest('a');
+        if (link?.href) {
+            setTimeout(handleUrlChange, 100);
         }
     });
-
-    // Закрытие по Escape
-    document.addEventListener('keydown', function (event) {
-        if (event.key === 'Escape') {
-            if (document.body.contains(modalOverlay)) {
-                document.body.removeChild(modalOverlay);
+    
+    /**
+     * Обрабатывает изменение URL
+     * Сравнивает пути без учёта query-параметров
+     */
+    function handleUrlChange() {
+        const newUrl = window.location.href;
+        
+        // Сравниваем без учёта query-параметров
+        const currentPath = currentUrl.split('?')[0];
+        const newPath = newUrl.split('?')[0];
+        
+        if (newPath !== currentPath) {
+            currentUrl = newUrl;
+            if (isTargetUrl(newUrl)) {
+                initOnJournalPage();
             }
         }
-    });
-
-    // Добавляем модальное окно на страницу
-    document.body.appendChild(modalOverlay);
+    }
 }
+
+/**
+ * Точка входа скрипта
+ * Запускает мониторинг URL после загрузки DOM
+ */
+(function main() {
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initUrlMonitor);
+    } else {
+        initUrlMonitor();
+    }
+})();
