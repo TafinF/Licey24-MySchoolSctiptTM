@@ -45,7 +45,17 @@ const CONFIG = {
     },
     
     /** URL-паттерн для страниц журнала */
-    URL_PATTERN: /^https:\/\/authedu\.mosreg\.ru\/teacher\/study-process\/journal\/(?:grade|my)\/[0-9]+(\?.*)?$/
+    URL_PATTERN: /^https:\/\/authedu\.mosreg\.ru\/teacher\/study-process\/journal\/(?:grade|my)\/[0-9]+(\?.*)?$/,
+    
+    /**
+     * Настройки подсветки форм контроля
+     */
+    CONTROL_FORMS: {
+        /** CSS-класс для поиска span элементов в thead */
+        SPAN_CLASS: '.DSXOGdoSiFGKohRuaDDx.ebIBbAN3ZomwnCMWP167._ELGiVRWaoZZRQLlT7eO.LqxH9tRjFX8eUgojIkc1.p2N_yf8k6HEnunN8Zt12.E8taxZlPjqlq_tc1djmu.uikwDrsLuFZMfBupkv7A',
+        /** Запрещённые для изменения формы контроля */
+        RESTRICTED: ['Диалог', 'Докл', 'УчЗ']
+    }
 };
 
 /**
@@ -70,7 +80,9 @@ const COLORS = {
     /** Цвет уголка "почти достиг" - жёлтый/оранжевый */
     CORNER: '#ffceff',
     /** Цвет уголка при несоответствии среднего балла - серый */
-    CORNER_MISMATCH: '#cccccc'
+    CORNER_MISMATCH: '#cccccc',
+    /** Цвет подсветки запрещённых форм контроля - красный */
+    RESTRICTED_CONTROL: '#ff0000'
 };
 
 /**

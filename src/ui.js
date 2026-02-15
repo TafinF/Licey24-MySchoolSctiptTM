@@ -101,27 +101,28 @@ function createStyles() {
         .mscp-tooltip-dynamic {
             position: fixed;
             padding: 8px 12px;
-            background: #333;
-            color: white;
-            font-size: 12px;
+            background: white;
+            color: #333;
+            font-size: 13px;
             font-weight: normal;
-            border-radius: 6px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15), 0 2px 4px rgba(0, 0, 0, 0.1);
             z-index: 99999;
             white-space: nowrap;
             pointer-events: none;
             transform: translate(-50%, -100%);
+            border: 1px solid rgba(0, 0, 0, 0.08);
         }
         
         /* Стрелочка tooltip (сверху) */
         .mscp-tooltip-dynamic::after {
             content: '';
             position: absolute;
-            bottom: -6px;
+            bottom: -7px;
             left: 50%;
             transform: translateX(-50%);
-            border: 6px solid transparent;
-            border-top-color: #333;
+            border: 7px solid transparent;
+            border-top-color: white;
         }
         
         /* Стрелочка tooltip (снизу) */
@@ -131,9 +132,44 @@ function createStyles() {
         
         .mscp-tooltip-dynamic.mscp-tooltip-below::after {
             bottom: auto;
-            top: -12px;
+            top: -14px;
             border-top-color: transparent;
-            border-bottom-color: #333;
+            border-bottom-color: white;
+        }
+        
+        /* Цветные badge для оценок в tooltip */
+        .mscp-grade-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 18px;
+            height: 18px;
+            padding: 0 5px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: 700;
+            margin: 0 1px;
+            vertical-align: middle;
+        }
+        
+        .mscp-grade-badge.mscp-badge-5 {
+            background-color: ${COLORS.GREEN};
+            color: #0d3d0d;
+        }
+        
+        .mscp-grade-badge.mscp-badge-4 {
+            background-color: ${COLORS.BLUE};
+            color: #0d2d4d;
+        }
+        
+        .mscp-grade-badge.mscp-badge-3 {
+            background-color: ${COLORS.YELLOW};
+            color: #4d4d0d;
+        }
+        
+        .mscp-grade-badge.mscp-badge-2 {
+            background-color: ${COLORS.RED};
+            color: #4d0d0d;
         }
         
         /* =============================================
@@ -143,7 +179,6 @@ function createStyles() {
         .mscp-button {
             line-height: 0;
             padding: 8px;
-            margin-left: -1px;
             border-color: #d6d6df;
             border-style: solid;
             border-width: 1px;
@@ -151,15 +186,10 @@ function createStyles() {
             background: white;
             cursor: pointer;
             transition: background 0.2s ease;
+            border-radius: 8px;
         }
         .mscp-button:hover {
-            background: lightgrey;
-        }
-        .mscp-button:first-child {
-            border-radius: 8px 0 0 8px;
-        }
-        .mscp-button:last-child {
-            border-radius: 0 8px 8px 0;
+            background: #ececec;
         }
         
         /* =============================================
@@ -333,46 +363,27 @@ function createStyles() {
 // ============================================================
 
 /**
- * Создаёт SVG-иконку кисти (градиентная)
+ * Создаёт SVG-иконку настроек (шестерёнка с кистью)
  * @returns {string} HTML-строка с SVG-элементом
  */
-function createBrushIcon() {
+function createSettingsIcon() {
     return `
-        <svg class="bi-brush" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
-            <path d="M15.825.12a.5.5 0 0 1 .132.584c-1.53 3.43-4.743 8.17-7.095 10.64a6.1 6.1 0 0 1-2.373 1.534c-.018.227-.06.538-.16.868-.201.659-.667 1.479-1.708 1.74a8.1 8.1 0 0 1-3.078.132 4 4 0 0 1-.562-.135 1.4 1.4 0 0 1-.466-.247.7.7 0 0 1-.204-.288.62.62 0 0 1 .004-.443c.095-.245.316-.38.461-.452.394-.197.625-.453.867-.826.095-.144.184-.297.287-.472l.117-.198c.151-.255.326-.54.546-.848.528-.739 1.201-.925 1.746-.896q.19.012.348.048c.062-.172.142-.38.238-.608.261-.619.658-1.419 1.187-2.069 2.176-2.67 6.18-6.206 9.117-8.104a.5.5 0 0 1 .596.04M4.705 11.912a1.2 1.2 0 0 0-.419-.1c-.246-.013-.573.05-.879.479-.197.275-.355.532-.5.777l-.105.177c-.106.181-.213.362-.32.528a3.4 3.4 0 0 1-.76.861c.69.112 1.736.111 2.657-.12.559-.139.843-.569.993-1.06a3 3 0 0 0 .126-.75zm1.44.026c.12-.04.277-.1.458-.183a5.1 5.1 0 0 0 1.535-1.1c1.9-1.996 4.412-5.57 6.052-8.631-2.59 1.927-5.566 4.66-7.302 6.792-.442.543-.795 1.243-1.042 1.826-.121.288-.214.54-.275.72v.001l.575.575zm-4.973 3.04.007-.005zm3.582-3.043.002.001h-.002z"></path>
+        <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="20" height="20" version="1.1" viewBox="0 0 32 32">
             <defs>
-                <linearGradient id="MyGradient">
-                    <stop offset="0%" stop-color="green" />
-                    <stop offset="50%" stop-color="blue" />
-                    <stop offset="100%" stop-color="red" />
+                <linearGradient id="mscp-gradient" x1="6.0911" x2="25.908" y1="26.626" y2="5.3748" gradientUnits="userSpaceOnUse">
+                    <stop stop-color="#ff0063" offset="0"></stop>
+                    <stop stop-color="#fdff00" offset=".32325"></stop>
+                    <stop stop-color="#0c0aff" offset=".35364"></stop>
+                    <stop stop-color="#0200ff" offset=".51622"></stop>
+                    <stop offset=".52463"></stop>
                 </linearGradient>
             </defs>
-            <style type="text/css">.bi-brush{fill:url(#MyGradient)}</style>
-        </svg>
-    `;
-}
-
-/**
- * Создаёт SVG-иконку информации (i в круге)
- * @returns {string} HTML-строка с SVG-элементом
- */
-function createInfoIcon() {
-    return `
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-info-circle" viewBox="0 0 16 16">
-            <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
-            <path d="m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0"/>
-        </svg>
-    `;
-}
-
-/**
- * Создаёт SVG-иконку таблицы Excel
- * @returns {string} HTML-строка с SVG-элементом
- */
-function createExcelIcon() {
-    return `
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-file-earmark-spreadsheet" viewBox="0 0 16 16">
-            <path d="M14 14V4.5L9.5 0H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2M9.5 3A1.5 1.5 0 0 0 11 4.5h2V9H3V2a1 1 0 0 1 1-1h5.5zM3 12v-2h2v2zm0 1h2v2H4a1 1 0 0 1-1-1zm3 2v-2h3v2zm4 0v-2h3v1a1 1 0 0 1-1 1zm3-3h-3v-2h3zm-7 0v-2h3v2z"/>
+            <g transform="matrix(1.1018 0 0 1.2006 -1.6207 -3.2015)">
+                <g transform="matrix(1.3333 0 0 1.3333 3.7785e-5 4e-7)" fill="#909090">
+                    <path d="m10 2c-0.55228 0-1 0.44772-1 1v1.5818c-0.69525 0.2814-1.3415 0.65745-1.9229 1.1119l-1.3713-0.79172c-0.22968-0.13261-0.50264-0.16855-0.75882-0.09991-0.25618 0.06865-0.47459 0.23625-0.6072 0.46593l-2 3.4641c-0.27614 0.47829-0.11227 1.0899 0.36602 1.366l1.3708 0.7914c-0.05051 0.3633-0.07657 0.7341-0.07657 1.1105s0.02606 0.7471 0.07657 1.1105l-1.3708 0.7914c-0.22969 0.1326-0.39728 0.351-0.46593 0.6072-0.06864 0.2562-0.03271 0.5291 0.0999 0.7588l2 3.4641c0.13261 0.2297 0.35103 0.3973 0.60721 0.466 0.25618 0.0686 0.52913 0.0327 0.75882-0.0999l1.3713-0.7918c0.5814 0.4544 1.2277 0.8305 1.9229 1.1119v1.5818c0 0.5523 0.44772 1 1 1h4c0.5522 0 1-0.4477 1-1v-1.5818c0.6952-0.2814 1.3415-0.6575 1.9229-1.1119l1.3713 0.7918c0.2297 0.1326 0.5026 0.1685 0.7588 0.0999 0.2562-0.0687 0.4746-0.2363 0.6072-0.4659l2-3.4641c0.1326-0.2297 0.1686-0.5027 0.0999-0.7589-0.0686-0.2561-0.2362-0.4746-0.4659-0.6072l-1.3708-0.7914c0.0505-0.3633 0.0766-0.7341 0.0766-1.1105s-0.0261-0.7472-0.0766-1.1105l1.3708-0.7914c0.4783-0.27619 0.6422-0.88778 0.366-1.3661l-2-3.4641c-0.1326-0.22969-0.351-0.39728-0.6072-0.46593-0.2562-0.06864-0.5291-0.03271-0.7588 0.0999l-1.3713 0.79174c-0.5814-0.45442-1.2277-0.83046-1.9229-1.1119v-1.5818c0-0.55228-0.4478-1-1-1zm1 3.2899v-1.2899h2v1.2899c0 0.44242 0.2907 0.83225 0.7147 0.95845 0.9111 0.27116 1.7328 0.75367 2.4076 1.392 0.3213 0.30395 0.8041 0.3607 1.1872 0.13955l1.1187-0.64589 1 1.732-1.1173 0.64507c-0.3828 0.22098-0.5751 0.66703-0.473 1.097 0.1058 0.4457 0.1621 0.9116 0.1621 1.3919s-0.0563 0.9462-0.1621 1.3919c-0.1021 0.43 0.0902 0.876 0.473 1.097l1.1173 0.6451-1 1.732-1.1188-0.6459c-0.383-0.2211-0.8658-0.1644-1.1872 0.1396-0.6747 0.6383-1.4964 1.1208-2.4075 1.3919-0.424 0.1262-0.7147 0.5161-0.7147 0.9585v1.2899h-2v-1.2899c0-0.4424-0.2908-0.8323-0.7148-0.9585-0.91111-0.2711-1.7327-0.7536-2.4075-1.3919-0.32132-0.304-0.80415-0.3607-1.1872-0.1396l-1.1187 0.6459-1-1.732 1.1173-0.6451c0.38275-0.221 0.57504-0.667 0.47296-1.097-0.1058-0.4457-0.16204-0.9116-0.16204-1.3919s0.05623-0.9462 0.16204-1.3919c0.10208-0.43-0.09022-0.87603-0.47296-1.097l-1.1173-0.64506 1-1.732 1.1187 0.64588c0.38305 0.22115 0.86587 0.16439 1.1872-0.13956 0.67479-0.63831 1.4964-1.1208 2.4075-1.392 0.424-0.1262 0.7148-0.51603 0.7148-0.95845zm-1 6.7101c0-1.1046 0.89542-2 2-2s2 0.8954 2 2-0.8954 2-2 2-2-0.8954-2-2zm2-4c-2.2092 0-4 1.7909-4 4 0 2.2091 1.7909 4 4 4 2.2091 0 4-1.7909 4-4 0-2.2091-1.7909-4-4-4z" clip-rule="evenodd" fill="#909090" fill-rule="evenodd"></path>
+                </g>
+                <path d="m27.555 8.42c-1.355 1.647-5.07 6.195-8.021 9.81l-3.747-3.804c3.389-3.016 7.584-6.744 9.1-8.079 2.697-2.377 5.062-3.791 5.576-3.213 0.322 0.32-0.533 2.396-2.908 5.286zm-8.676 10.61c-1.143 1.399-2.127 2.604-2.729 3.343l-4.436-4.323c0.719-0.64 1.916-1.705 3.304-2.939zm-3.39 4.153v-0.012c-2.575 9.88-14.018 4.2-14.018 4.2s4.801 0.605 4.801-3.873c0-4.341 4.412-4.733 4.683-4.753l4.543 4.427c0 1e-3 -9e-3 0.011-9e-3 0.011z" fill="url(#mscp-gradient)" style="mix-blend-mode:normal"></path>
+            </g>
         </svg>
     `;
 }
@@ -382,40 +393,20 @@ function createExcelIcon() {
 // ============================================================
 
 /**
- * Создаёт контейнер с кнопками управления и добавляет в DOM
- * @param {HTMLElement} parentElement - элемент, в который добавляются кнопки
+ * Создаёт кнопку настроек и добавляет в DOM
+ * @param {HTMLElement} parentElement - элемент, в который добавляется кнопка
  * @returns {void}
  */
 function createButtons(parentElement) {
     const buttonContainer = document.createElement('div');
     buttonContainer.style.cssText = 'box-shadow: 1px 1px 4px 0px rgba(0, 0, 0, 0.07); border-radius: 8px; display: inline-flex;';
     
-    const buttons = [
-        {
-            icon: createBrushIcon(),
-            title: 'Принудительная покраска',
-            handler: processJournalTable
-        },
-        {
-            icon: createInfoIcon(),
-            title: 'Информация о обработке',
-            handler: showModal
-        },
-        {
-            icon: createExcelIcon(),
-            title: 'Копировать в Excel',
-            handler: downloadAsFile
-        }
-    ];
-    
-    buttons.forEach(config => {
-        const button = document.createElement('button');
-        button.className = 'mscp-button';
-        button.innerHTML = config.icon;
-        button.title = config.title;
-        button.addEventListener('click', config.handler);
-        buttonContainer.appendChild(button);
-    });
+    const button = document.createElement('button');
+    button.className = 'mscp-button';
+    button.innerHTML = createSettingsIcon();
+    button.title = 'Настройки покраса';
+    button.addEventListener('click', showModal);
+    buttonContainer.appendChild(button);
     
     parentElement.appendChild(buttonContainer);
 }
@@ -584,12 +575,12 @@ function createSettingsSection(currentSettings) {
     `;
     section.appendChild(actionButtons);
     
-    // Обработчики кнопок (пока заглушки)
+    // Обработчики кнопок
     actionButtons.querySelector('[data-action="download"]').addEventListener('click', () => {
-        console.log('Скачать журнал — в разработке');
+        downloadAsFile();
     });
     actionButtons.querySelector('[data-action="removeHeader"]').addEventListener('click', () => {
-        console.log('Удалить шапку — в разработке');
+        removeHeaderAndSetHeight();
     });
     
     return section;

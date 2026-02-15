@@ -184,7 +184,7 @@ function applyHideAverageMarkSetting() {
 /**
  * Удаляет баннер госуслуг и устанавливает высоту основного контейнера
  * - Удаляет элементы a.WC-Banner-link
- * - Добавляет CSS-стиль для .MSC8WgFhoGMq0svc { height: 100vh }
+ * - Добавляет CSS-стиль для .MSC8WgFhoGMq0svc { height: calc(100vh - 40px) }
  * @returns {void}
  */
 function removeBannerAndSetHeight() {
@@ -201,7 +201,36 @@ function removeBannerAndSetHeight() {
     if (!document.getElementById('mscp-banner-override')) {
         style.textContent = `
             .MSC8WgFhoGMq0svc {
-                height: calc(100vh - 0px);
+                height: calc(100vh - 40px);
+            }
+        `;
+        document.head.appendChild(style);
+    }
+}
+
+/**
+ * Удаляет шапку сайта и устанавливает высоту основного контейнера
+ * - Удаляет элементы div._56grJoiM2euP0m-4_cQJ0._3Nr9SercCabAgtlvo50e48
+ * - Добавляет CSS-стиль для .MSC8WgFhoGMq0svc { height: 100vh }
+ * @returns {void}
+ */
+function removeHeaderAndSetHeight() {
+    removeBannerAndSetHeight();
+    
+    // Удаление элемента div._56grJoiM2euP0m-4_cQJ0._3Nr9SercCabAgtlvo50e48
+    document.querySelectorAll('div._56grJoiM2euP0m-4_cQJ0._3Nr9SercCabAgtlvo50e48').forEach(el => {
+        el.remove();
+    });
+
+    // Установка нужной высоты для класса .MSC8WgFhoGMq0svc
+    const style = document.createElement('style');
+    style.id = 'mscp-header-override';
+    
+    // Проверяем, не добавлен ли уже стиль
+    if (!document.getElementById('mscp-header-override')) {
+        style.textContent = `
+            .MSC8WgFhoGMq0svc {
+                height: calc(100vh);
             }
         `;
         document.head.appendChild(style);
@@ -750,11 +779,41 @@ function colorizeTable(tableBody) {
     }
 }
 
+// ============================================================
+// ПОДСВЕТКА ФОРМ КОНТРОЛЯ
+// ============================================================
+
+/**
+ * Подсвечивает запрещённые для изменения формы контроля в заголовке таблицы
+ * - Находит все span элементы с указанным классом в thead
+ * - Проверяет текст на соответствие запрещённым формам
+ * - Применяет красный цвет к совпадениям
+ * @returns {void}
+ */
+function highlightControlForms() {
+    const selector = `thead span${CONFIG.CONTROL_FORMS.SPAN_CLASS}`;
+    const spans = document.querySelectorAll(selector);
+    
+    spans.forEach(span => {
+        const spanText = span.textContent.trim();
+        
+        if (CONFIG.CONTROL_FORMS.RESTRICTED.includes(spanText)) {
+            span.style.color = COLORS.RESTRICTED_CONTROL;
+            span.parentElement.style.background = COLORS.WARNING;
+        }
+    });
+}
+
+// ============================================================
+// ОСНОВНЫЕ ФУНКЦИИ ОБРАБОТКИ
+// ============================================================
+
 /**
  * Основная функция обработки таблицы журнала
  * - Ожидает появления таблицы
  * - Обновляет состояние журнала
  * - Запускает окрашивание
+ * - Подсвечивает запрещённые формы контроля
  * - Устанавливает наблюдателя за изменениями
  * @returns {void}
  */
@@ -777,6 +836,7 @@ function processJournalTable() {
     );
     
     colorizeTable(table.lastChild);
+    highlightControlForms();
     
     if (tableObserver) {
         tableObserver.disconnect();
@@ -797,6 +857,82 @@ function processJournalTable() {
 let activeTooltip = null;
 
 /**
+ * Создаёт HTML-элемент badge для оценки
+ * @param {string} grade - оценка (2, 3, 4 или 5)
+ * @returns {HTMLSpanElement} span элемент с цветным badge
+ */
+function createGradeBadge(grade) {
+    const badge = document.createElement('span');
+    badge.className = `mscp-grade-badge mscp-badge-${grade}`;
+    badge.textContent = grade;
+    return badge;
+}
+
+/**
+ * Форматирует текст тултипа с цветными badge для оценок
+ * @param {string} text - исходный текст (например: 'До "4": 5 или 3, 4')
+ * @returns {DocumentFragment} фрагмент с HTML элементами
+ */
+function formatTooltipContent(text) {
+    const fragment = document.createDocumentFragment();
+    
+    // Парсим формат: До "X": ... или N пятёрок
+    const match = text.match(/До "(\d)": (.+)/);
+    
+    if (!match) {
+        // Если формат не распознан, возвращаем как есть
+        fragment.textContent = text;
+        return fragment;
+    }
+    
+    const targetGrade = match[1];
+    const comboText = match[2];
+    
+    // "До "
+    fragment.appendChild(document.createTextNode('До '));
+    
+    // Целевая оценка в badge
+    fragment.appendChild(createGradeBadge(targetGrade));
+    
+    // ": "
+    fragment.appendChild(document.createTextNode(': '));
+    
+    // Парсим комбинации
+    // Форматы: "5", "4 или 3, 5", "2 пятёрки", "3, 4"
+    if (comboText.includes('пятёр')) {
+        // Формула "N пятёрок" → "[5] × N"
+        const countMatch = comboText.match(/(\d+)\s*пятёр/);
+        if (countMatch) {
+            fragment.appendChild(createGradeBadge('5'));
+            fragment.appendChild(document.createTextNode(' × ' + countMatch[1]));
+        } else {
+            fragment.appendChild(document.createTextNode(comboText));
+        }
+    } else {
+        // Разбиваем по " или "
+        const options = comboText.split(' или ');
+        
+        options.forEach((option, optIndex) => {
+            if (optIndex > 0) {
+                fragment.appendChild(document.createTextNode(' или '));
+            }
+            
+            // Разбиваем по "," без пробела
+            const grades = option.split(',');
+            
+            grades.forEach((grade, gradeIndex) => {
+                if (gradeIndex > 0) {
+                    fragment.appendChild(document.createTextNode(','));
+                }
+                fragment.appendChild(createGradeBadge(grade.trim()));
+            });
+        });
+    }
+    
+    return fragment;
+}
+
+/**
  * Показывает tooltip при наведении на ячейку
  * @param {MouseEvent} event - событие наведения мыши
  * @returns {void}
@@ -813,7 +949,7 @@ function showTooltip(event) {
     
     const tooltip = document.createElement('div');
     tooltip.className = 'mscp-tooltip-dynamic';
-    tooltip.textContent = tooltipText;
+    tooltip.appendChild(formatTooltipContent(tooltipText));
     document.body.appendChild(tooltip);
     
     const rect = cell.getBoundingClientRect();
