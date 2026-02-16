@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         My School Color Point
 // @namespace    http://tampermonkey.net/
-// @version      2026-02-15_19-54-56
+// @version      2026-02-16_12-24-00
 // @description  Окрашивает оценки в разные цвета в Моя Школа
 // @author       Tafintsev Feodor taf.f11@ya.ru
 // @match        https://authedu.mosreg.ru/*
@@ -403,17 +403,17 @@ function removeBannerAndSetHeight() {
 
 /**
  * Удаляет шапку сайта и устанавливает высоту основного контейнера
- * - Удаляет элементы div._56grJoiM2euP0m-4_cQJ0._3Nr9SercCabAgtlvo50e48
+ * - Удаляет элементы #root > div > div._56grJoiM2euP0m-4_cQJ0
  * - Добавляет CSS-стиль для .MSC8WgFhoGMq0svc { height: 100vh }
  * @returns {void}
  */
 function removeHeaderAndSetHeight() {
     removeBannerAndSetHeight();
     
-    // Удаление элемента div._56grJoiM2euP0m-4_cQJ0._3Nr9SercCabAgtlvo50e48
-    document.querySelectorAll('div._56grJoiM2euP0m-4_cQJ0._3Nr9SercCabAgtlvo50e48').forEach(el => {
-        el.remove();
-    });
+    // Удаление элемента #root > div > div._56grJoiM2euP0m-4_cQJ0
+    let el = document.querySelector('#root > div > div._56grJoiM2euP0m-4_cQJ0');
+    el.remove();
+
 
     // Установка нужной высоты для класса .MSC8WgFhoGMq0svc
     const style = document.createElement('style');
