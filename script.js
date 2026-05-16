@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         My School Color Point
 // @namespace    http://tampermonkey.net/
-// @version      2026-02-16_12-24-00
+// @version      2026-05-16_13-04-00
 // @description  Окрашивает оценки в разные цвета в Моя Школа
 // @author       Tafintsev Feodor taf.f11@ya.ru
 // @match        https://authedu.mosreg.ru/*
@@ -375,23 +375,37 @@ function applyHideAverageMarkSetting() {
 }
 
 /**
- * Удаляет баннер госуслуг и устанавливает высоту основного контейнера
- * - Удаляет элементы a.WC-Banner-link
- * - Добавляет CSS-стиль для .MSC8WgFhoGMq0svc { height: calc(100vh - 40px) }
+ * Удаляет первый найденный элемент баннера, если на странице присутствуют элементы только одного из указанных классов.
+ * Если найдены элементы двух и более разных классов – ничего не делает.
+ * Если нет ни одного элемента из указанных классов – ничего не делает.
+ * После удаления добавляет CSS-стиль для .MSC8WgFhoGMq0svc { height: calc(100vh - 40px) }.
+ *
+ * @param {string[]} [classNames=['WC-Banner-content', 'WC-Banner-link']] - Массив имён классов (без точки),
+ *        которые проверяются на наличие на странице. По умолчанию – ['WC-Banner-content', 'WC-Banner-link'].
  * @returns {void}
  */
-function removeBannerAndSetHeight() {
-    // Удаление элемента a.WC-Banner-link
-    document.querySelectorAll('a.WC-Banner-link').forEach(el => {
-        el.remove();
+function removeBannerAndSetHeight(classNames = ['WC-Banner-content', 'WC-Banner-link']) {
+    // Определяем, какие классы из списка реально присутствуют на странице
+    const presentClasses = classNames.filter(className => {
+        return document.querySelector(`.${className}`) !== null;
     });
 
-    // Установка нужной высоты для класса .MSC8WgFhoGMq0svc
-    const style = document.createElement('style');
-    style.id = 'mscp-banner-override';
-    
-    // Проверяем, не добавлен ли уже стиль
-    if (!document.getElementById('mscp-banner-override')) {
+    // Если найдено 0 или 2+ классов – ничего не делаем
+    if (presentClasses.length !== 1) {
+        return;
+    }
+
+    // Единственный класс, элементы которого нужно удалить
+    const targetClass = presentClasses[0];
+
+    // Удаляем элемент этого класса
+    document.querySelector(`.${targetClass}`).remove();
+
+    // Добавляем стиль для высоты, если его ещё нет
+    const styleId = 'mscp-banner-override';
+    if (!document.getElementById(styleId)) {
+        const style = document.createElement('style');
+        style.id = styleId;
         style.textContent = `
             .MSC8WgFhoGMq0svc {
                 height: calc(100vh - 40px);
@@ -932,7 +946,7 @@ function colorizeSummaryRow(row) {
             
             if (className) {
                 cell.classList.add(className);
-                finalGrades.push(grade);
+                //finalGrades.push(grade);
             }
         }
     }
@@ -962,8 +976,8 @@ function colorizeTable(tableBody) {
     Utils.clearColoring(tableBody);
     
     const modeElement = document.querySelector(CONFIG.SELECTORS.MODAL_TRIGGER);
-    const modeTitle = modeElement?.getAttribute('title');
-    const isSummaryMode = modeTitle === 'Режим отображения итоговых отметок';
+    const modeTitle = modeElement?.getAttribute('data-test-component');
+    const isSummaryMode = modeTitle === 'JournalControlPanelView-journalResults';
     
     const colorizeRow = isSummaryMode ? colorizeSummaryRow : colorizeStandardRow;
     
@@ -1231,16 +1245,16 @@ function createStyles() {
         
         /* Итоговые оценки - сплошной цвет */
         .mscp-final-5 {
-            background-color: ${COLORS.GREEN};
+            background-color: ${COLORS.GREEN} !important;
         }
         .mscp-final-4 {
-            background-color: ${COLORS.BLUE};
+            background-color: ${COLORS.BLUE} !important;
         }
         .mscp-final-3 {
-            background-color: ${COLORS.YELLOW};
+            background-color: ${COLORS.YELLOW} !important;
         }
         .mscp-final-2 {
-            background-color: ${COLORS.RED};
+            background-color: ${COLORS.RED} !important;
         }
         
         /* Недостаточно оценок - красная полоса снизу */
