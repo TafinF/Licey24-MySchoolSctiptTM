@@ -31,6 +31,7 @@ VERSION="$(date +%Y-%m-%d_%H-%M-%S)"
     printf '\n(function () {\n'
 
     while IFS= read -r module; do
+        module="${module%$''}"
         [[ -z "$module" || "$module" == \#* ]] && continue
         [[ -f "src/$module" ]] || { echo "Нет файла src/$module (см. src/modules.list)" >&2; exit 1; }
         printf '\n'
