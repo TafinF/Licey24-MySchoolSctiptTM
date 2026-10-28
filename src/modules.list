@@ -1,0 +1,35 @@
+# Порядок сборки модулей в script.js. Одна строка — один файл относительно src/.
+# Строки с # и пустые игнорируются.
+# Модули делят общую область видимости, поэтому порядок важен для кода верхнего уровня
+# (const, let, объекты). Функции вызываются позже, их порядок не критичен.
+
+config.js
+
+core/state.js
+core/utils.js
+core/settings.js
+core/page-cleanup.js
+
+coloring/grades.js
+coloring/combos.js
+coloring/cells.js
+coloring/rows.js
+coloring/table.js
+coloring/journal.js
+
+ui/tooltip.js
+ui/styles.js
+ui/comment-presets.js
+
+schedule/compact.js
+schedule/lesson-parser.js
+schedule/layout.js
+schedule/page.js
+
+ui/icons.js
+ui/buttons.js
+ui/export.js
+ui/settings-form.js
+ui/modal.js
+
+main.js

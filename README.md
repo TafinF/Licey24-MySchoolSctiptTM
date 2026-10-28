@@ -58,3 +58,16 @@ https://chromewebstore.google.com/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmp
 3. Если ничего не произошло, обновлений нет. Если открылось новое окно то в нём необходимо нажать "Перезаписать".
 <img src="https://github.com/user-attachments/assets/4f090a9a-fd25-4705-b9ac-e0719c3e48b1" width="600" />
 
+
+# Разработка
+
+Код разбит на модули в `src/`, а `script.js` в корне — результат сборки (его ставит Tampermonkey). Руками `script.js` не правят.
+
+```bash
+./build.sh          # собрать script.js (релиз)
+./build.sh --test   # собрать dist/script.test.js с пометкой "test" в имени
+```
+
+- Порядок модулей — `src/modules.list` (новый файл нужно добавить туда).
+- Шапка userscript — `src/header.txt`; версия подставляется при сборке.
+- Запускать в Git Bash (есть вместе с Git for Windows).

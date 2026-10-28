@@ -1,0 +1,12 @@
+// ==UserScript==
+// @name         __NAME__
+// @namespace    http://tampermonkey.net/
+// @version      __VERSION__
+// @description  Окрашивает оценки в разные цвета в Моя Школа
+// @author       Tafintsev Feodor taf.f11@ya.ru
+// @match        https://authedu.mosreg.ru/*
+// @icon         https://www.google.com/s2/favicons?sz=64&domain=mosreg.ru
+// @updateURL    https://raw.githubusercontent.com/TafinF/Licey24-MySchoolSctiptTM/refs/heads/main/script.js
+// @downloadURL  https://raw.githubusercontent.com/TafinF/Licey24-MySchoolSctiptTM/refs/heads/main/script.js
+// @grant        none
+// ==/UserScript==
