@@ -6,6 +6,30 @@
 const SCHEDULE_SUBJECT_COLORS = ['#3b82f6', '#f59e0b', '#8b5cf6', '#14b8a6', '#ec4899', '#84cc16', '#f97316', '#64748b'];
 
 /**
+ * Определяет номер урока по времени начала и школьному звонку (CONFIG.LESSON_STARTS)
+ * @param {number} hours - часы начала урока
+ * @param {number} minutes - минуты начала урока
+ * @returns {number} номер урока от 1; для нестандартного времени — номер ближайшего по звонку
+ */
+function lessonNumberFromStart(hours, minutes) {
+    const at = hours * 60 + minutes;
+    let best = 0;
+    let bestDiff = Infinity;
+
+    CONFIG.LESSON_STARTS.forEach((time, index) => {
+        const [startHours, startMinutes] = time.split(':').map(Number);
+        const diff = Math.abs(startHours * 60 + startMinutes - at);
+
+        if (diff < bestDiff) {
+            best = index;
+            bestDiff = diff;
+        }
+    });
+
+    return best + 1;
+}
+
+/**
  * Определяет статус значка урока или ДЗ по цвету иконки на сайте
  * @param {string} color - цвет в формате "rgb(r, g, b)"
  * @returns {'done'|'late'|'wait'} зелёный — заполнено, красный — не заполнено, серый — ещё нет

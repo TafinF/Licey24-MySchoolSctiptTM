@@ -7,7 +7,8 @@
  * - Карточки сайта остаются в DOM скрытыми, поверх каждой рисуется своя: время (начало и конец),
  *   класс и два статуса (урок и домашнее задание цветом сайта: зелёный / красный / серый)
  * - Название предмета выносится в легенду и обозначается цветом полоски; если предмет один, оно скрыто
- * - Строки сетки = время начала урока, размеры подгоняются под окно и ширину столбцов
+ * - Строки сетки = номера уроков, подписанные слева; номер, которого нет всю неделю, остаётся узким пропуском.
+ *   Размеры подгоняются под окно и ширину столбцов
  * - Клик по карточке нажимает "К журналу" в меню оригинальной карточки
  * Стили действуют только пока на <body> есть класс mscp-schedule
  */
@@ -17,6 +18,12 @@ const ScheduleLayout = {
 
     /** @type {number} Идентификатор запланированного пересчёта (0 — не запланирован) */
     frame: 0,
+
+    /** Номер для уроков, у которых в карточке не нашёлся номер: они идут после всех остальных */
+    UNNUMBERED: 1000,
+
+    /** Высота пропуска вместо номера, которого нет всю неделю, в долях высоты строки урока */
+    GAP_WEIGHT: 0.3,
 
     /** @type {HTMLElement|null} Колонка со шкалой времени (кэш) */
     axis: null,
@@ -76,7 +83,7 @@ const ScheduleLayout = {
 
         // Свои карточки и легенда вне режима не стилизованы: убираем
         this.axis = null;
-        document.querySelectorAll('.mscp-card, #mscp-sch-legend').forEach(element => element.remove());
+        document.querySelectorAll('.mscp-card, #mscp-sch-legend, .mscp-sch-rows').forEach(element => element.remove());
     },
 
     /** Обработчик изменения размера окна */
@@ -149,21 +156,22 @@ const ScheduleLayout = {
         const useColors = this.options.showColor && subjects.length > 1;
         const colorOf = subject => SCHEDULE_SUBJECT_COLORS[subjects.indexOf(subject) % SCHEDULE_SUBJECT_COLORS.length];
 
-        // Строка таблицы = время начала урока: в одной строке не бывает уроков с разным началом
-        const rowKeys = [...new Set(entries.map(entry => entry.key))].sort((a, b) => a - b);
-        for (const { slot, data, key } of entries) {
+        // Строка таблицы = номер урока; номер, которого нет ни в один день недели, остаётся узким пропуском
+        const rows = this.buildRows(entries);
+        for (const { slot, data, number, copy } of entries) {
             slot.classList.add('mscp-sch-slot');
-            slot.style.setProperty('--mscp-row', rowKeys.indexOf(key) + 1);
+            slot.style.setProperty('--mscp-row', rows.start.get(number) + copy);
             this.renderCard(slot, data, useColors && data.subject ? colorOf(data.subject) : '');
         }
+
+        this.renderRowLabels(axis, rows.labels);
 
         if (content) {
             this.renderLegend(content, grid, useColors ? subjects.map(subject => ({ subject, color: colorOf(subject) })) : []);
         }
 
-        const rows = Math.max(rowKeys.length, 1);
         const top = grid.getBoundingClientRect().top + (scroller?.scrollTop ?? 0);
-        const height = Math.max(window.innerHeight - top - 8, rows * 48);
+        const height = Math.max(window.innerHeight - top - 8, rows.weight * 48);
         const columnWidth = grid.firstElementChild?.getBoundingClientRect().width || 190;
 
         // Масштаб содержимого (1 = класс 19px, время 12px): карточка помещается в строку и в столбец.
@@ -171,40 +179,122 @@ const ScheduleLayout = {
         // и высота (подпись предмета добавляет строку)
         const needWidth = this.options.classColor ? 142 : 132;
         const needHeight = this.options.showLabel ? 66 : 52;
-        const scale = Math.min(Math.max(Math.min(columnWidth / needWidth, (height / rows) / needHeight), 0.6), 1.6);
+        const scale = Math.min(Math.max(Math.min(columnWidth / needWidth, (height / rows.weight) / needHeight), 0.6), 1.6);
 
-        grid.style.setProperty('--mscp-rows', rows);
-        grid.style.setProperty('--mscp-grid-h', `${Math.floor(height)}px`);
-        grid.style.setProperty('--mscp-u', scale.toFixed(3));
+        // Колонка номеров уроков (бывшая шкала времени) строится по той же сетке, что и дни
+        for (const element of [grid, axis]) {
+            element.style.setProperty('--mscp-tpl', rows.template);
+            element.style.setProperty('--mscp-grid-h', `${Math.floor(height)}px`);
+            element.style.setProperty('--mscp-u', scale.toFixed(3));
+        }
         // Длинное название предмета переносится на вторую строку, если в карточке остаётся место
-        grid.style.setProperty('--mscp-lines', (height / rows) / scale >= needHeight + 14 ? 2 : 1);
+        grid.style.setProperty('--mscp-lines', (height / rows.weight) / scale >= needHeight + 14 ? 2 : 1);
     },
 
     /**
-     * Собирает уроки одного дня и определяет ключ строки для каждого
-     * Ключ — время начала в минутах, умноженное на 10. Второй урок дня с тем же
-     * началом получает ключ на единицу больше, чтобы карточки не накладывались
+     * Собирает уроки одного дня и определяет номер урока для каждого
+     * Номер определяется по времени начала и школьному звонку (CONFIG.LESSON_STARTS). Второй урок дня с тем же
+     * номером (например, деление класса на группы) получает copy = 1 и встаёт в следующую строку
      * @param {HTMLElement} day - колонка дня
-     * @returns {Array<{slot: HTMLElement, card: HTMLElement, key: number}>}
+     * @returns {Array<{slot: HTMLElement, card: HTMLElement, number: number, copy: number}>}
      */
     collectDay(day) {
         const slots = [...day.children]
             .filter(child => child.querySelector(CONFIG.SELECTORS.SCHEDULE_CARD))
             .sort((a, b) => parseFloat(a.style.top) - parseFloat(b.style.top));
 
-        const seenStarts = new Map();
+        const seenNumbers = new Map();
 
         return slots.map(slot => {
             const card = slot.querySelector(CONFIG.SELECTORS.SCHEDULE_CARD);
-            const time = /(\d{1,2}):(\d{2})/.exec(card.textContent);
+            // Время начала из "2. 09:30 - 10:15"; число перед точкой сайт считает внутри дня, его не берём
+            const match = /^\d+\.\s*(\d{1,2}):(\d{2})/.exec(card.textContent.trim());
 
-            // Без времени в карточке ставим урок после всех остальных, в порядке сверху вниз
-            const start = time ? Number(time[1]) * 60 + Number(time[2]) : 1e5 + parseFloat(slot.style.top);
-            const duplicates = seenStarts.get(start) ?? 0;
-            seenStarts.set(start, duplicates + 1);
+            // Без времени в карточке урок идёт после всех остальных, в порядке сверху вниз
+            const number = match ? lessonNumberFromStart(Number(match[1]), Number(match[2])) : this.UNNUMBERED;
+            const copy = seenNumbers.get(number) ?? 0;
+            seenNumbers.set(number, copy + 1);
 
-            return { slot, card, key: start * 10 + duplicates };
+            return { slot, card, number, copy };
         });
+    },
+
+    /**
+     * Раскладывает номера уроков по строкам сетки
+     * От первого до последнего номера недели идут все номера подряд: если какого-то урока нет
+     * ни в один день, под него остаётся узкая пустая строка, а следующие уроки не сдвигаются
+     * @param {Array<{number: number, copy: number}>} entries - уроки недели
+     * @returns {{template: string, start: Map<number, number>, labels: Array<{number: number|string, row: number, span: number}>, weight: number}}
+     *          template — значение grid-template-rows, start — первая строка каждого номера,
+     *          labels — подписи колонки номеров, weight — высота в «строках урока» (пропуск считается долей)
+     */
+    buildRows(entries) {
+        // Сколько строк нужно номеру: максимум уроков с этим номером в один день
+        const copies = new Map();
+        for (const { number, copy } of entries) {
+            copies.set(number, Math.max(copies.get(number) ?? 0, copy + 1));
+        }
+
+        const numbers = [...copies.keys()].filter(number => number !== this.UNNUMBERED);
+        const order = [];
+        for (let number = Math.min(...numbers); number <= Math.max(...numbers); number++) {
+            order.push(number);
+        }
+        if (copies.has(this.UNNUMBERED)) order.push(this.UNNUMBERED);
+
+        const tracks = [];
+        const start = new Map();
+        const labels = [];
+        let weight = 0;
+
+        for (const number of order) {
+            if (!copies.has(number)) {
+                tracks.push(`minmax(0, ${this.GAP_WEIGHT}fr)`);
+                weight += this.GAP_WEIGHT;
+                continue;
+            }
+
+            const span = copies.get(number);
+            start.set(number, tracks.length + 1);
+            labels.push({ number: number === this.UNNUMBERED ? '' : number, row: tracks.length + 1, span });
+            for (let i = 0; i < span; i++) tracks.push('minmax(0, 1fr)');
+            weight += span;
+        }
+
+        return {
+            template: tracks.join(' ') || 'minmax(0, 1fr)',
+            start,
+            labels,
+            weight: Math.max(weight, 1)
+        };
+    },
+
+    /**
+     * Рисует в колонке слева номера уроков (пересоздаёт только если набор подписей изменился)
+     * Оригинальные подписи часов сайта скрыты стилем, наша колонка добавляется внутрь той же колонки
+     * @param {HTMLElement} axis - колонка шкалы времени сайта
+     * @param {Array<{number: number|string, row: number, span: number}>} labels - подписи
+     * @returns {void}
+     */
+    renderRowLabels(axis, labels) {
+        const signature = JSON.stringify(labels);
+        let box = axis.querySelector(':scope > .mscp-sch-rows');
+        if (box?.dataset.signature === signature) return;
+
+        box?.remove();
+        box = document.createElement('div');
+        box.className = 'mscp-sch-rows';
+        box.dataset.signature = signature;
+
+        for (const { number, row, span } of labels) {
+            const label = document.createElement('div');
+            label.className = 'mscp-row-label';
+            label.style.gridRow = `${row} / span ${span}`;
+            label.textContent = number;
+            box.append(label);
+        }
+
+        axis.append(box);
     },
 
     /**
@@ -342,12 +432,28 @@ const ScheduleLayout = {
         const styleEl = document.createElement('style');
         styleEl.id = 'mscp-schedule-styles';
         styleEl.textContent = `
-            /* Шкала времени не нужна: уроки стоят по строкам времени начала.
-               Колонку оставляем пустой, чтобы шапка с днями недели не съехала */
+            /* Шкала времени не нужна: уроки стоят по номерам. Колонка остаётся (шапка с днями недели
+               не должна съехать), но вместо часов в ней наши номера уроков на одной сетке с днями */
             body.mscp-schedule .mscp-sch-axis {
-                visibility: hidden;
-                height: 0 !important;
+                height: var(--mscp-grid-h, 0) !important;
                 overflow: hidden;
+            }
+            body.mscp-schedule .mscp-sch-axis > :not(.mscp-sch-rows) {
+                display: none !important;
+            }
+            body.mscp-schedule .mscp-sch-rows {
+                display: grid;
+                grid-template-columns: minmax(0, 1fr);
+                grid-template-rows: var(--mscp-tpl, minmax(0, 1fr));
+                height: 100%;
+            }
+            body.mscp-schedule .mscp-row-label {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: calc(18px * ${u});
+                font-weight: 700;
+                color: #9ca3af;
             }
             body.mscp-schedule .mscp-sch-grid {
                 height: auto !important;
@@ -371,11 +477,11 @@ const ScheduleLayout = {
                 width: auto !important;
             }
 
-            /* Колонка дня: строки по числу разных времён начала, вся высота окна */
+            /* Колонка дня: строки по номерам уроков (с узкими пропусками), вся высота окна */
             body.mscp-schedule .mscp-sch-day {
                 display: grid !important;
                 grid-template-columns: minmax(0, 1fr);
-                grid-template-rows: repeat(var(--mscp-rows, 1), minmax(0, 1fr));
+                grid-template-rows: var(--mscp-tpl, minmax(0, 1fr));
                 height: var(--mscp-grid-h, auto) !important;
             }
             body.mscp-schedule .mscp-sch-day > :not(.mscp-sch-slot) {
