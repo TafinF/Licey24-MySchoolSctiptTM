@@ -3,15 +3,15 @@
 // ============================================================
 
 /**
- * Получает список учителей школы и недельное расписание любого учителя
+ * Получает списки учителей и классов школы и недельное расписание любого учителя или класса
  * - Вход берётся у самого сайта: токен из cookie, год и школа из его localStorage, пароли не нужны
  * - Всё полученное кладётся в localStorage (ключ CONFIG.COLLEAGUES.CACHE_KEY), чтобы не гонять лишние запросы:
- *   список учителей живёт неделю, текущая и будущие недели — несколько часов, прошедшие недели не меняются
+ *   списки учителей и классов живут неделю, текущая и будущие недели — несколько часов, прошедшие недели не меняются
  * - Если сайт не ответил, а в кеше есть устаревшие данные, отдаются они с пометкой stale
- * - Закреплённые учителя и последний выбранный лежат отдельным ключом: сброс кеша их не трогает
+ * - Закреплённые учителя и классы, последний выбор и режим лежат отдельным ключом: сброс кеша их не трогает
  */
 const ColleagueApi = {
-    /** @type {{teachers: ?{key: string, at: number, list: Array}, weeks: Object}|null} Кеш в памяти, зеркало localStorage */
+    /** @type {{teachers: ?{key: string, at: number, list: Array}, classes: ?{key: string, at: number, list: Array}, weeks: Object}|null} Кеш в памяти, зеркало localStorage */
     store: null,
 
     /**
@@ -122,7 +122,7 @@ const ColleagueApi = {
 
     /**
      * Кеш из памяти; при первом обращении читается из localStorage
-     * @returns {{teachers: ?Object, weeks: Object}}
+     * @returns {{teachers: ?Object, classes: ?Object, weeks: Object}}
      */
     load() {
         if (this.store) return this.store;
@@ -134,7 +134,7 @@ const ColleagueApi = {
             console.error('Ошибка чтения кеша расписаний:', error);
         }
 
-        this.store = { teachers: saved?.teachers ?? null, weeks: saved?.weeks ?? {} };
+        this.store = { teachers: saved?.teachers ?? null, classes: saved?.classes ?? null, weeks: saved?.weeks ?? {} };
         return this.store;
     },
 
@@ -159,11 +159,11 @@ const ColleagueApi = {
     },
 
     /**
-     * Полностью очищает кеш расписаний (закреплённые учителя остаются)
+     * Полностью очищает кеш расписаний (закреплённые учителя и классы остаются)
      * @returns {void}
      */
     clear() {
-        this.store = { teachers: null, weeks: {} };
+        this.store = { teachers: null, classes: null, weeks: {} };
         try {
             localStorage.removeItem(CONFIG.COLLEAGUES.CACHE_KEY);
         } catch (error) {
@@ -172,20 +172,27 @@ const ColleagueApi = {
     },
 
     /**
-     * Закреплённые учителя и последний выбранный
-     * @returns {{ids: number[], last: ?number}}
+     * Закреплённые и последние выбранные учитель и класс, последний открытый режим
+     * @returns {{ids: number[], last: ?number, classIds: number[], lastClass: ?number, mode: string}}
+     *          ids и last — учителя, classIds и lastClass — классы, mode — 'teachers' или 'classes'
      */
     loadFavorites() {
         try {
             const saved = JSON.parse(localStorage.getItem(CONFIG.COLLEAGUES.FAVORITES_KEY));
-            return { ids: saved?.ids ?? [], last: saved?.last ?? null };
+            return {
+                ids: saved?.ids ?? [],
+                last: saved?.last ?? null,
+                classIds: saved?.classIds ?? [],
+                lastClass: saved?.lastClass ?? null,
+                mode: saved?.mode === 'classes' ? 'classes' : 'teachers'
+            };
         } catch (error) {
-            return { ids: [], last: null };
+            return { ids: [], last: null, classIds: [], lastClass: null, mode: 'teachers' };
         }
     },
 
     /**
-     * @param {{ids: number[], last: ?number}} favorites
+     * @param {{ids: number[], last: ?number, classIds: number[], lastClass: ?number, mode: string}} favorites
      * @returns {void}
      */
     saveFavorites(favorites) {
@@ -199,14 +206,16 @@ const ColleagueApi = {
     // ---------- данные ----------
 
     /**
-     * Список учителей школы: кеш, если он свежий, иначе запрос (по 100 на страницу)
-     * @param {boolean} [force=false] - игнорировать кеш
-     * @returns {Promise<{list: Array<{id: number, name: string, subjects: string}>, at: number, stale: boolean}>}
+     * Список из кеша, если он свежий, иначе запрос; при неудаче — устаревший список из кеша
+     * @param {'teachers'|'classes'} slot - какой список
+     * @param {function(number, number): Promise<Array>} fetchList - запрос списка, получает учебный год и школу
+     * @param {boolean} force - игнорировать кеш
+     * @returns {Promise<{list: Array, at: number, stale: boolean}>}
      */
-    async getTeachers(force = false) {
+    async getList(slot, fetchList, force) {
         const { year, school } = this.session() ?? {};
         const key = `${school}-${year}`;
-        const cached = this.load().teachers;
+        const cached = this.load()[slot];
         const usable = cached?.key === key ? cached : null;
 
         if (usable && !force && Date.now() - usable.at < CONFIG.COLLEAGUES.TEACHERS_TTL_MS) {
@@ -214,6 +223,24 @@ const ColleagueApi = {
         }
 
         try {
+            const list = await fetchList(year, school);
+            const store = this.load();
+            store[slot] = { key, at: Date.now(), list };
+            this.save();
+            return { list, at: store[slot].at, stale: false };
+        } catch (error) {
+            if (usable) return { list: usable.list, at: usable.at, stale: true };
+            throw error;
+        }
+    },
+
+    /**
+     * Список учителей школы (по 100 на страницу)
+     * @param {boolean} [force=false] - игнорировать кеш
+     * @returns {Promise<{list: Array<{id: number, name: string, subjects: string}>, at: number, stale: boolean}>}
+     */
+    getTeachers(force = false) {
+        return this.getList('teachers', async (year, school) => {
             const profiles = [];
             for (let page = 1; page <= 20; page++) {
                 const data = await this.get('/core/teacher/v1/teacher_profiles', {
@@ -223,7 +250,7 @@ const ColleagueApi = {
                 if (data.length < 100) break;
             }
 
-            const list = profiles
+            return profiles
                 .filter(profile => !profile.deleted && !profile.virtual)
                 .map(profile => ({
                     id: profile.id,
@@ -231,30 +258,46 @@ const ColleagueApi = {
                     subjects: (profile.subjects ?? []).map(subject => subject.name).slice(0, 3).join(', ')
                 }))
                 .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
-
-            const store = this.load();
-            store.teachers = { key, at: Date.now(), list };
-            this.save();
-            return { list, at: store.teachers.at, stale: false };
-        } catch (error) {
-            if (usable) return { list: usable.list, at: usable.at, stale: true };
-            throw error;
-        }
+        }, force);
     },
 
     /**
-     * Уроки учителя за неделю по дням и номерам уроков школьного звонка
+     * Список классов школы, по параллелям
+     * @param {boolean} [force=false] - игнорировать кеш
+     * @returns {Promise<{list: Array<{id: number, name: string, level: number, hint: string}>, at: number, stale: boolean}>}
+     */
+    getClasses(force = false) {
+        return this.getList('classes', async (year, school) => {
+            const units = await this.get('/core/teacher/v1/class_units', {
+                academic_year_id: year, school_id: school, per_page: 200
+            });
+
+            return units
+                .map(unit => ({
+                    id: unit.id,
+                    name: unit.name,
+                    level: Number.parseInt(unit.name, 10) || unit.class_level_id || 0,
+                    hint: unit.student_count ? `${unit.student_count} уч.` : ''
+                }))
+                .sort((a, b) => a.level - b.level || a.name.localeCompare(b.name, 'ru'));
+        }, force);
+    },
+
+    /**
+     * Уроки учителя или класса за неделю по дням и номерам уроков школьного звонка
      * Отменённые уроки и уроки, перенесённые на другую дату, не берутся: сайт отдаёт их на старом месте
-     * @param {number} teacherId - id профиля учителя
+     * @param {{type: 'teacher'|'class', id: number}} owner - чьё расписание: учителя или класса
      * @param {Date} monday - понедельник нужной недели
      * @param {boolean} [force=false] - игнорировать кеш
-     * @returns {Promise<{days: Object<string, Array<[number, string, string, string]>>, at: number, stale: boolean, fromCache: boolean}>}
-     *          days: {ГГГГ-ММ-ДД: [[номер урока, время начала, класс, предмет], ...]}
+     * @returns {Promise<{days: Object<string, Array<[number, string, string, string, string]>>, at: number, stale: boolean, fromCache: boolean}>}
+     *          days: {ГГГГ-ММ-ДД: [[номер урока, время начала, класс, предмет, учитель], ...]}
      */
-    async getWeek(teacherId, monday, force = false) {
+    async getWeek(owner, monday, force = false) {
+        const isClass = owner.type === 'class';
         const from = this.isoDate(monday);
         const to = this.isoDate(this.addDays(monday, 6));
-        const key = `${teacherId}|${from}`;
+        // Ключ учителя без приставки: недели, сохранённые до появления классов, остаются в силе
+        const key = `${isClass ? 'c' : ''}${owner.id}|${from}`;
         const cached = this.load().weeks[key];
 
         // Прошедшая неделя не меняется, остальные устаревают
@@ -266,8 +309,9 @@ const ColleagueApi = {
             const items = [];
             for (let page = 1; page <= 5; page++) {
                 const data = await this.get('/plan/teacher/v1/schedule_items', {
-                    academic_year_id: this.session()?.year, teacher_id: teacherId, from, to,
-                    with_group_class_subject_info: true, per_page: 300, page
+                    academic_year_id: this.session()?.year,
+                    ...(isClass ? { class_unit_id: owner.id } : { teacher_id: owner.id }),
+                    from, to, with_group_class_subject_info: true, per_page: 300, page
                 });
                 items.push(...data);
                 if (data.length < 300) break;
@@ -284,10 +328,20 @@ const ColleagueApi = {
     },
 
     /**
+     * "Байч Екатерина Юрьевна" → "Байч Е.Ю."
+     * @param {?string} fullName - ФИО полностью
+     * @returns {string} пустая строка, если имени нет
+     */
+    shortName(fullName) {
+        const [surname, ...rest] = (fullName ?? '').trim().split(/\s+/);
+        return [surname, rest.map(part => `${part[0]}.`).join('')].filter(Boolean).join(' ');
+    },
+
+    /**
      * Сворачивает ответ сайта в короткий вид для кеша
      * Номер урока считается по времени начала: поле lesson_number в ответе не школьный номер
      * @param {Array} items - записи schedule_items
-     * @returns {Object<string, Array<[number, string, string, string]>>}
+     * @returns {Object<string, Array<[number, string, string, string, string]>>}
      */
     compactWeek(items) {
         const pad = value => String(value).padStart(2, '0');
@@ -304,7 +358,8 @@ const ColleagueApi = {
                 lessonNumberFromStart(hours, minutes),
                 `${pad(hours)}:${pad(minutes)}`,
                 item.class_unit_name ?? '',
-                item.subject_name ?? ''
+                item.subject_name ?? '',
+                this.shortName(item.teacher_name)
             ]);
         });
 
