@@ -49,7 +49,9 @@ const CONFIG = {
         /** Карточка урока в недельном расписании */
         SCHEDULE_CARD: '[data-test-component^="scheduleDay-"][data-test-component*="-Card-"]',
         /** Кнопка "предыдущая неделя" в шапке расписания */
-        SCHEDULE_WEEK_PREV: '[data-test-component="scheduleHeaderPrevWeek"]'
+        SCHEDULE_WEEK_PREV: '[data-test-component="scheduleHeaderPrevWeek"]',
+        /** Кнопка календаря в верхней белой полосе сайта */
+        CALENDAR_BUTTON: 'button[data-test-component="appBarCalendarToggle"]'
     },
 
     /** URL-паттерн страницы расписания уроков */
@@ -235,6 +237,6 @@ const SCHEDULE_STYLES = [
         value: 'custom',
         label: 'Заменённое',
         description: 'Своя сетка: на карточке класс, время начала и конца и два статуса (урок и ДЗ). '
-            + 'Предметы помечены цветом, названия в легенде. Клик по карточке открывает урок в журнале.'
+            + 'Предметы помечены цветом, названия в настройках (обозначения). Клик по карточке открывает урок в журнале.'
     }
 ];

@@ -159,6 +159,9 @@ function createScheduleStyleGroup(currentSettings) {
     const look = createScheduleLookOptions(currentSettings);
     group.appendChild(look);
 
+    // Легенда видна, пока работает заменённое расписание
+    if (ScheduleLayout.observer) group.appendChild(createScheduleLegend());
+
     // Параметры вида нужны только заменённому расписанию
     const syncLook = () => {
         const isCustom = group.querySelector('input[name="mscp-schedule-style"]:checked')?.value === 'custom';
@@ -210,4 +213,43 @@ function createScheduleLookOptions(currentSettings) {
     `;
 
     return look;
+}
+
+/**
+ * Создаёт легенду заменённого расписания: цвета предметов и значение значков урока и ДЗ
+ * @returns {HTMLElement} DOM-элемент с легендой
+ */
+function createScheduleLegend() {
+    const box = document.createElement('div');
+    box.className = 'mscp-look';
+
+    const title = document.createElement('div');
+    title.className = 'mscp-look-title';
+    title.textContent = 'Обозначения в расписании:';
+
+    const legend = document.createElement('div');
+    legend.className = 'mscp-legend';
+
+    for (const { subject, color } of ScheduleLayout.legend) {
+        const item = document.createElement('span');
+        item.className = 'mscp-legend-item';
+        const swatch = document.createElement('i');
+        swatch.style.background = color;
+        item.append(swatch, subject);
+        legend.append(item);
+    }
+
+    const key = document.createElement('span');
+    key.className = 'mscp-legend-key';
+    key.append('У — урок, ДЗ — домашнее задание:');
+    for (const [status, text] of [['done', 'заполнено'], ['late', 'не заполнено'], ['wait', 'ещё нет']]) {
+        const badge = document.createElement('span');
+        badge.className = `mscp-badge mscp-badge-${status}`;
+        badge.textContent = text;
+        key.append(badge);
+    }
+    legend.append(key);
+
+    box.append(title, legend);
+    return box;
 }

@@ -28,6 +28,9 @@ const ScheduleLayout = {
     /** @type {HTMLElement|null} Колонка со шкалой времени (кэш) */
     axis: null,
 
+    /** @type {Array<{subject: string, color: string}>} Предметы недели с цветами для легенды в настройках */
+    legend: [],
+
     /** @type {boolean} Идёт ли сейчас открытие журнала через меню сайта */
     isOpening: false,
 
@@ -81,10 +84,12 @@ const ScheduleLayout = {
         this.observer = null;
         window.removeEventListener('resize', this.onResize);
         document.body.classList.remove('mscp-schedule');
+        document.querySelector(CONFIG.SELECTORS.CALENDAR_BUTTON)?.style.removeProperty('--mscp-cal-top');
+        document.querySelector('.mscp-sch-header')?.classList.remove('mscp-sch-header');
 
         // Свои карточки и легенда вне режима не стилизованы: убираем
         this.axis = null;
-        document.querySelectorAll('.mscp-card, #mscp-sch-legend, .mscp-sch-rows').forEach(element => element.remove());
+        document.querySelectorAll('.mscp-card, .mscp-sch-rows').forEach(element => element.remove());
     },
 
     /** Обработчик изменения размера окна */
@@ -167,9 +172,10 @@ const ScheduleLayout = {
 
         this.renderRowLabels(axis, rows.labels);
 
-        if (content) {
-            this.renderLegend(content, grid, useColors ? subjects.map(subject => ({ subject, color: colorOf(subject) })) : []);
-        }
+        // Легенда показывается в окне настроек
+        this.legend = useColors ? subjects.map(subject => ({ subject, color: colorOf(subject) })) : [];
+
+        this.placeCalendarButton();
 
         const top = grid.getBoundingClientRect().top + (scroller?.scrollTop ?? 0);
         const height = Math.max(window.innerHeight - top - 8, rows.weight * 48);
@@ -354,45 +360,21 @@ const ScheduleLayout = {
     },
 
     /**
-     * Рисует легенду: цвета предметов и что значат значки
-     * @param {HTMLElement} content - контейнер страницы
-     * @param {HTMLElement} grid - сетка расписания (легенда встаёт перед ней)
-     * @param {Array<{subject: string, color: string}>} items - предметы с цветами (пусто, если предмет один)
+     * Ставит кнопку календаря сайта в правый край строки "Расписание уроков" и сужает эту строку
+     * Верхняя белая полоса (aside с названием школы) скрыта стилем. Сама кнопка остаётся в DOM сайта
+     * (у неё остаются обработчики), поэтому не переносится, а прикрепляется поверх строки
      * @returns {void}
      */
-    renderLegend(content, grid, items) {
-        const anchor = [...content.children].find(child => child.contains(grid));
-        let legend = document.getElementById('mscp-sch-legend');
-        const signature = JSON.stringify(items);
+    placeCalendarButton() {
+        const prev = document.querySelector(CONFIG.SELECTORS.SCHEDULE_WEEK_PREV);
+        const button = document.querySelector(CONFIG.SELECTORS.CALENDAR_BUTTON);
+        if (!prev || !button) return;
 
-        if (legend?.dataset.signature === signature && legend.parentElement === content) return;
+        prev.closest('header')?.classList.add('mscp-sch-header');
 
-        legend?.remove();
-        legend = document.createElement('div');
-        legend.id = 'mscp-sch-legend';
-        legend.dataset.signature = signature;
-
-        for (const { subject, color } of items) {
-            const item = document.createElement('span');
-            item.className = 'mscp-legend-item';
-            const swatch = document.createElement('i');
-            swatch.style.background = color;
-            item.append(swatch, subject);
-            legend.append(item);
-        }
-
-        const key = document.createElement('span');
-        key.className = 'mscp-legend-key';
-        key.append('У — урок, ДЗ — домашнее задание:');
-        for (const [status, text] of [['done', 'заполнено'], ['late', 'не заполнено'], ['wait', 'ещё нет']]) {
-            const badge = document.createElement('span');
-            badge.className = `mscp-badge mscp-badge-${status}`;
-            badge.textContent = text;
-            key.append(badge);
-        }
-        legend.append(key);
-
-        content.insertBefore(legend, anchor);
+        const row = document.querySelector('[data-test-component="scheduleHeaderSettingsView"]') ?? prev;
+        const rect = row.getBoundingClientRect();
+        button.style.setProperty('--mscp-cal-top', `${Math.round(rect.top + (rect.height - 28) / 2)}px`);
     },
 
     /**
@@ -431,6 +413,7 @@ const ScheduleLayout = {
         if (document.getElementById('mscp-schedule-styles')) return;
 
         const u = 'var(--mscp-u, 1)';
+        const cal = CONFIG.SELECTORS.CALENDAR_BUTTON;
         const styleEl = document.createElement('style');
         styleEl.id = 'mscp-schedule-styles';
         styleEl.textContent = `
@@ -467,7 +450,7 @@ const ScheduleLayout = {
             }
             /* Подвал страницы ("Пользовательское соглашение") не даёт расписанию поместиться в окно.
                Он перерисовывается сайтом и теряет классы, поэтому скрываем по структуре */
-            body.mscp-schedule .mscp-sch-content > :not(:has(.mscp-sch-grid)):not(#mscp-sch-legend) {
+            body.mscp-schedule .mscp-sch-content > :not(:has(.mscp-sch-grid)) {
                 display: none !important;
             }
 
@@ -592,33 +575,56 @@ const ScheduleLayout = {
                 color: #44506d;
             }
 
-            /* Легенда над сеткой */
-            #mscp-sch-legend {
+            /* Верхняя белая полоса с названием школы не нужна; кнопка календаря уходит в строку расписания */
+            body.mscp-schedule aside:has(${cal}) {
+                height: 0 !important;
+                min-height: 0 !important;
+                padding: 0 !important;
+                border: 0 !important;
+                overflow: visible !important;
+            }
+            body.mscp-schedule aside:has(${cal}) *:not(${cal}):not(:has(${cal})):not(${cal} *) {
+                display: none !important;
+            }
+            body.mscp-schedule ${cal} {
+                position: fixed !important;
+                top: var(--mscp-cal-top, 130px) !important;
+                right: 12px !important;
+                z-index: 20;
+            }
+            /* Строка "Расписание уроков" ниже; справа остаётся место под кнопку календаря */
+            body.mscp-schedule .mscp-sch-header > div {
+                padding-top: 6px !important;
+                padding-bottom: 6px !important;
+                padding-right: 52px !important;
+            }
+
+            /* Легенда в окне настроек */
+            .mscp-legend {
                 display: flex;
                 flex-wrap: wrap;
                 align-items: center;
-                gap: 4px 14px;
-                padding: 6px 12px;
+                gap: 6px 14px;
                 font-size: 12px;
                 color: #4b5563;
             }
-            #mscp-sch-legend .mscp-legend-item {
+            .mscp-legend .mscp-legend-item {
                 display: flex;
                 align-items: center;
                 gap: 5px;
             }
-            #mscp-sch-legend .mscp-legend-item i {
+            .mscp-legend .mscp-legend-item i {
                 width: 10px;
                 height: 10px;
                 border-radius: 3px;
             }
-            #mscp-sch-legend .mscp-legend-key {
+            .mscp-legend .mscp-legend-key {
                 display: flex;
+                flex-wrap: wrap;
                 align-items: center;
                 gap: 6px;
-                margin-left: auto;
             }
-            #mscp-sch-legend .mscp-badge {
+            .mscp-legend .mscp-badge {
                 font-size: 11px;
                 padding: 3px 6px;
                 border-radius: 5px;
