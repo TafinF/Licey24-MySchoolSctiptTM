@@ -39,6 +39,7 @@ const SchedulePage = {
         ScheduleLayout.stop();
         ScheduleCompact.stop();
         document.querySelector('.mscp-button-box')?.remove();
+        ScheduleLegend.stop();
     },
 
     /**
@@ -58,6 +59,8 @@ const SchedulePage = {
             ScheduleCompact.stop();
             ScheduleLayout.start();
         }
+
+        ScheduleLegend.sync();
     },
 
     /**
@@ -77,6 +80,6 @@ const SchedulePage = {
 
         const button = createSettingsButton();
         button.style.marginLeft = '8px';
-        weekSwitch.append(button);
+        weekSwitch.append(ScheduleLegend.createButton(), button);
     }
 };

@@ -3,6 +3,20 @@
 // ============================================================
 
 /**
+ * Создаёт SVG-иконку легенды расписания (буква i в круге)
+ * @returns {string} HTML-строка с SVG-элементом
+ */
+function createInfoIcon() {
+    return `
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#909090" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="9.5"></circle>
+            <path d="M12 11v6"></path>
+            <circle cx="12" cy="7.5" r="0.6" fill="#909090"></circle>
+        </svg>
+    `;
+}
+
+/**
  * Создаёт SVG-иконку настроек (шестерёнка с кистью)
  * @returns {string} HTML-строка с SVG-элементом
  */

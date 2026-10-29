@@ -28,7 +28,7 @@ const ScheduleLayout = {
     /** @type {HTMLElement|null} Колонка со шкалой времени (кэш) */
     axis: null,
 
-    /** @type {Array<{subject: string, color: string}>} Предметы недели с цветами для легенды в настройках */
+    /** @type {Array<{subject: string, color: string}>} Предметы недели с цветами для легенды (ScheduleLegend) */
     legend: [],
 
     /** @type {boolean} Идёт ли сейчас открытие журнала через меню сайта */
@@ -601,7 +601,23 @@ const ScheduleLayout = {
                 padding-right: 52px !important;
             }
 
-            /* Легенда в окне настроек */
+            /* Легенда по кнопке ⓘ в шапке расписания */
+            .mscp-legend-pop {
+                position: fixed;
+                z-index: 1001;
+                max-width: 360px;
+                padding: 12px 14px;
+                background: white;
+                border-radius: 10px;
+                box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+                font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+            }
+            .mscp-legend-title {
+                margin-bottom: 8px;
+                font-size: 13px;
+                font-weight: 600;
+                color: #111827;
+            }
             .mscp-legend {
                 display: flex;
                 flex-wrap: wrap;

@@ -187,205 +187,366 @@ function createStyles() {
         }
 
         /* =============================================
-           СТИЛИ МОДАЛЬНОГО ОКНА
+           СТИЛИ ОКНА НАСТРОЕК
            ============================================= */
 
         .mscp-modal-overlay {
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.6);
+            inset: 0;
+            background-color: rgba(15, 23, 42, 0.55);
             display: flex;
             justify-content: center;
             align-items: center;
             z-index: 1000;
-            font-family: Arial, sans-serif;
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
         }
         .mscp-modal-window {
+            display: flex;
+            flex-direction: column;
+            width: 720px;
+            max-width: calc(100vw - 32px);
+            max-height: calc(100vh - 48px);
             background-color: white;
-            border-radius: 12px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-            min-width: 320px;
-            max-width: 400px;
+            border-radius: 14px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
             overflow: hidden;
+            color: #1f2937;
+        }
+        /* С вкладками высота постоянная, чтобы окно не прыгало при переключении */
+        .mscp-modal-window.mscp-has-nav {
+            height: min(580px, calc(100vh - 48px));
         }
         .mscp-modal-header {
-            background-color: #f8f9fa;
-            padding: 20px 24px;
-            border-bottom: 1px solid #e9ecef;
+            flex: none;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            padding: 14px 18px 14px 24px;
+            border-bottom: 1px solid #e5e7eb;
         }
         .mscp-modal-title {
             margin: 0;
-            font-size: 18px;
+            font-size: 17px;
             font-weight: 600;
-            color: #333;
+            color: #111827;
+        }
+        .mscp-modal-version {
+            margin-left: 10px;
+            font-size: 12px;
+            font-weight: 400;
+            color: #9ca3af;
         }
         .mscp-close-btn {
             background: none;
             border: none;
-            font-size: 28px;
+            font-size: 26px;
+            line-height: 1;
             cursor: pointer;
-            color: #6c757d;
-            width: 40px;
-            height: 40px;
+            color: #6b7280;
+            width: 36px;
+            height: 36px;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: all 0.2s ease;
+            transition: background-color 0.2s ease;
         }
         .mscp-close-btn:hover {
-            background-color: #e9ecef;
-            color: #333;
+            background-color: #eef0f4;
+            color: #111827;
+        }
+
+        .mscp-modal-body {
+            flex: 1;
+            display: flex;
+            min-height: 0;
+        }
+        .mscp-modal-nav {
+            flex: none;
+            width: 180px;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            background-color: #f8f9fb;
+            border-right: 1px solid #e5e7eb;
+        }
+        .mscp-modal-nav[hidden] {
+            display: none;
+        }
+        .mscp-nav-item {
+            text-align: left;
+            padding: 9px 12px;
+            border: none;
+            border-radius: 8px;
+            background: none;
+            font: inherit;
+            font-size: 14px;
+            color: #4b5563;
+            cursor: pointer;
+        }
+        .mscp-nav-item:hover {
+            background-color: #eef0f4;
+        }
+        .mscp-nav-item.mscp-active {
+            background-color: #e4e9fc;
+            color: #2f4bc4;
+            font-weight: 600;
         }
         .mscp-modal-content {
-            padding: 24px;
+            flex: 1;
+            min-width: 0;
+            overflow-y: auto;
+            padding: 20px 24px 8px;
         }
-        .mscp-info-block {
-            padding: 12px 16px;
-            background-color: #f8f9fa;
-            border-radius: 8px;
-            border: 1px solid #e9ecef;
-            font-size: 13px;
-            color: #495057;
-            line-height: 1.6;
+
+        .mscp-section {
+            margin-bottom: 22px;
         }
-        .mscp-info-block div {
-            padding: 2px 0;
+        .mscp-section-title {
+            margin: 0 0 4px;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: #6b7280;
         }
-        .mscp-info-label {
-            color: #6c757d;
-        }
-        .mscp-settings-group {
-            margin-top: 16px;
-        }
-        .mscp-settings-title {
-            font-size: 13px;
-            color: #6c757d;
-            margin-bottom: 8px;
-            font-weight: 500;
-        }
-        .mscp-setting-item {
+
+        /* Строка настройки: название и пояснение слева, тумблер или кнопка справа */
+        .mscp-row {
             display: flex;
             align-items: center;
-            padding: 4px 0;
-        }
-        .mscp-checkbox {
-            width: 16px;
-            height: 16px;
-            margin-right: 8px;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 10px 0;
+            border-bottom: 1px solid #f0f1f4;
             cursor: pointer;
-            accent-color: #496be8;
         }
-        .mscp-radio {
-            width: 16px;
-            height: 16px;
-            margin-right: 8px;
-            cursor: pointer;
-            accent-color: #496be8;
+        .mscp-row:last-child {
+            border-bottom: none;
         }
-        .mscp-style-item {
-            display: block;
+        .mscp-row-static {
+            cursor: default;
         }
-        .mscp-style-description {
-            margin: 1px 0 0 24px;
+        .mscp-row-text {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 0;
+        }
+        .mscp-row-title {
+            font-size: 14px;
+            color: #1f2937;
+        }
+        .mscp-row-desc {
             font-size: 12px;
             line-height: 1.35;
-            color: #6c757d;
+            color: #6b7280;
         }
-        .mscp-look {
-            margin: 8px 0 0 24px;
-            padding: 8px 12px;
-            border: 1px solid #e9ecef;
+
+        .mscp-switch {
+            position: relative;
+            flex: none;
+            width: 38px;
+            height: 22px;
+        }
+        .mscp-switch input {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            opacity: 0;
+            cursor: pointer;
+            z-index: 1;
+        }
+        .mscp-switch-track {
+            position: absolute;
+            inset: 0;
+            border-radius: 11px;
+            background-color: #cbd0d9;
+            transition: background-color 0.2s ease;
+        }
+        .mscp-switch-track::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background-color: white;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+            transition: transform 0.2s ease;
+        }
+        .mscp-switch input:checked + .mscp-switch-track {
+            background-color: #496be8;
+        }
+        .mscp-switch input:checked + .mscp-switch-track::after {
+            transform: translateX(16px);
+        }
+        .mscp-switch input:focus-visible + .mscp-switch-track {
+            outline: 2px solid #9db0f5;
+            outline-offset: 2px;
+        }
+
+        /* Сведения о журнале */
+        .mscp-stats {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 22px;
+        }
+        .mscp-stat {
+            flex: 1;
+            padding: 10px 12px;
+            background-color: #f8f9fb;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+        }
+        .mscp-stat b {
+            display: block;
+            font-size: 18px;
+            font-weight: 600;
+            color: #111827;
+        }
+        .mscp-stat span {
+            font-size: 12px;
+            color: #6b7280;
+        }
+
+        .mscp-btn-action {
+            flex: none;
+            padding: 7px 16px;
+            background-color: white;
+            color: #374151;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            cursor: pointer;
+            font: inherit;
+            font-size: 13px;
+            font-weight: 500;
+            transition: background-color 0.2s ease;
+        }
+        .mscp-btn-action:hover:not(:disabled) {
+            background-color: #f3f4f6;
+        }
+        .mscp-btn-action:disabled {
+            color: #9ca3af;
+            cursor: default;
+        }
+
+        /* Карточки выбора вида расписания */
+        .mscp-options {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-top: 8px;
+        }
+        .mscp-option {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            padding: 10px;
+            border: 2px solid #e5e7eb;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: border-color 0.2s ease, background-color 0.2s ease;
+        }
+        .mscp-option:hover {
+            border-color: #c7d0f5;
+        }
+        .mscp-option:has(input:checked) {
+            border-color: #496be8;
+            background-color: #f5f7ff;
+        }
+        .mscp-option input {
+            position: absolute;
+            opacity: 0;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            cursor: pointer;
+        }
+        .mscp-thumb {
+            width: 100%;
+            height: auto;
+            margin-bottom: 4px;
+            background-color: #f3f4f6;
             border-radius: 8px;
         }
-        .mscp-look-off {
-            opacity: 0.45;
+        .mscp-option-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #111827;
         }
-        .mscp-look-title {
-            font-size: 12px;
-            color: #6c757d;
-            margin-bottom: 4px;
+
+        /* Параметры заменённого расписания */
+        .mscp-subpanel {
+            margin-top: 16px;
+            padding: 2px 16px 10px;
+            background-color: #f8f9fb;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
         }
-        .mscp-look-row {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 2px 14px;
-            padding: 2px 0;
+        .mscp-subpanel[hidden] {
+            display: none;
         }
-        .mscp-look-note {
-            margin: 2px 0 4px;
+        .mscp-subpanel .mscp-row {
+            border-bottom-color: #e9ebf0;
         }
-        .mscp-label {
-            display: flex;
-            align-items: center;
-            cursor: pointer;
+        .mscp-hint {
+            padding-top: 8px;
+        }
+
+        /* Переключатель из нескольких кнопок */
+        .mscp-seg {
+            flex: none;
+            display: inline-flex;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            overflow: hidden;
+            background-color: white;
+        }
+        .mscp-seg label {
+            position: relative;
+            padding: 6px 12px;
             font-size: 13px;
-            color: #333;
-        }
-        .mscp-action-buttons {
-            margin-top: 12px;
-            display: flex;
-            gap: 8px;
-        }
-        .mscp-btn-action {
-            flex: 1;
-            padding: 8px 12px;
-            background-color: #f8f9fa;
-            color: #495057;
-            border: 1px solid #dee2e6;
-            border-radius: 6px;
+            color: #374151;
             cursor: pointer;
-            font-size: 12px;
-            font-weight: 500;
-            transition: all 0.2s ease;
-            text-align: center;
+            white-space: nowrap;
         }
-        .mscp-btn-action:hover {
-            background-color: #e9ecef;
-            border-color: #adb5bd;
+        .mscp-seg label + label {
+            border-left: 1px solid #d1d5db;
         }
-        .mscp-buttons-section {
-            display: flex;
-            justify-content: flex-end;
-            gap: 12px;
-            padding-top: 16px;
-            border-top: 1px solid #e9ecef;
-        }
-        .mscp-btn-primary {
-            padding: 10px 24px;
+        .mscp-seg label:has(input:checked) {
             background-color: #496be8;
             color: white;
-            border: none;
-            border-radius: 6px;
+        }
+        .mscp-seg input {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            opacity: 0;
             cursor: pointer;
-            font-size: 14px;
-            font-weight: 500;
-            transition: all 0.2s ease;
         }
-        .mscp-btn-primary:hover {
-            background-color: #3a5bd0;
-            transform: translateY(-1px);
-        }
-        .mscp-btn-secondary {
-            padding: 10px 24px;
-            background-color: white;
-            color: #495057;
-            border: 1px solid #6c757d;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 500;
-            transition: all 0.2s ease;
-        }
-        .mscp-btn-secondary:hover {
-            background-color: #f8f9fa;
-            border-color: #495057;
+
+        @media (max-width: 600px) {
+            .mscp-modal-body {
+                flex-direction: column;
+            }
+            .mscp-modal-nav {
+                width: auto;
+                flex-direction: row;
+                border-right: none;
+                border-bottom: 1px solid #e5e7eb;
+            }
+            .mscp-options {
+                grid-template-columns: 1fr;
+            }
         }
     `;
     document.head.appendChild(styleEl);

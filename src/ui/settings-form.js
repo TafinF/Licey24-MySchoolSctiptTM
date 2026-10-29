@@ -1,255 +1,287 @@
 // ============================================================
-// МОДАЛЬНОЕ ОКНО: секции формы настроек
+// МОДАЛЬНОЕ ОКНО: вкладки и секции формы настроек
 // ============================================================
 
 /**
- * Создаёт секцию с информацией о журнале
- * @returns {HTMLElement} DOM-элемент с информацией
+ * Вкладки окна настроек. Вкладка показывается, если на этой странице есть что настраивать
+ * @type {Array<{id: string, label: string, isAvailable: function(): boolean, build: function(Object): HTMLElement}>}
  */
-function createInfoSection() {
-    const section = document.createElement('div');
-    section.className = 'mscp-info-block';
-
-    const roundingMethod = JournalState.isMathRound
-        ? 'математический (4,5)'
-        : 'лицейский (4,65)';
-    const gradesRequired = JournalState.isWeNeed3Grades ? '3' : '5';
-
-    // Сведения о журнале есть только на странице журнала
-    const journalInfo = isTargetUrl(window.location.href) ? `
-        <div><span class="mscp-info-label">Уроков в триместре:</span> ${JournalState.countLessons}</div>
-        <div><span class="mscp-info-label">Нужно оценок:</span> ${gradesRequired}</div>
-        <div><span class="mscp-info-label">Округление:</span> ${roundingMethod}</div>
-    ` : '';
-
-    section.innerHTML = `
-        <div><span class="mscp-info-label">Версия:</span> ${VERSION}</div>
-        ${journalInfo}
-    `;
-
-    return section;
-}
+const SETTINGS_TABS = [
+    {
+        id: 'journal',
+        label: 'Журнал',
+        isAvailable: () => isTargetUrl(window.location.href),
+        build: createJournalTab
+    },
+    {
+        id: 'schedule',
+        label: 'Расписание',
+        isAvailable: () => true,
+        build: createScheduleTab
+    }
+];
 
 /**
- * Создаёт секцию с настройками (чекбоксы и кнопки действий)
- * @param {Object} currentSettings - текущие настройки
- * @returns {HTMLElement} DOM-элемент с настройками
+ * Создаёт секцию вкладки: заголовок и строки настроек
+ * @param {string} title - заголовок секции
+ * @param {...HTMLElement} children - содержимое секции
+ * @returns {HTMLElement} DOM-элемент секции
  */
-function createSettingsSection(currentSettings) {
-    const section = document.createElement('div');
-    section.className = 'mscp-settings-group';
+function createSection(title, ...children) {
+    const section = document.createElement('section');
+    section.className = 'mscp-section';
 
-    // Настройки журнала нужны только на странице журнала
-    if (isTargetUrl(window.location.href)) {
-        appendJournalSettings(section, currentSettings);
+    if (title) {
+        const heading = document.createElement('h3');
+        heading.className = 'mscp-section-title';
+        heading.textContent = title;
+        section.appendChild(heading);
     }
 
-    section.appendChild(createScheduleStyleGroup(currentSettings));
-
+    section.append(...children);
     return section;
 }
 
 /**
- * Добавляет в секцию настройки журнала: чекбоксы окрашивания, дополнительные и кнопки действий
- * @param {HTMLElement} section - секция настроек
- * @param {Object} currentSettings - текущие настройки
- * @returns {void}
+ * Создаёт строку с переключателем: название, пояснение и тумблер справа
+ * @param {string} key - ключ настройки (data-key)
+ * @param {string} title - название настройки
+ * @param {string} description - пояснение мелким шрифтом (может быть пустым)
+ * @param {boolean} checked - включена ли настройка
+ * @returns {HTMLElement} DOM-элемент строки
  */
-function appendJournalSettings(section, currentSettings) {
-    // Секция "Цветной режим для:"
-    const colorTitle = document.createElement('div');
-    colorTitle.className = 'mscp-settings-title';
-    colorTitle.textContent = 'Цветной режим для:';
-    section.appendChild(colorTitle);
-
-    const colorSettings = [
-        { key: 'colorAccumulation', label: 'Накопляемость оценок', checked: currentSettings.colorAccumulation },
-        { key: 'colorLessonGrades', label: 'Оценки за уроки', checked: currentSettings.colorLessonGrades },
-        { key: 'colorAverageGrade', label: 'Средний балл', checked: currentSettings.colorAverageGrade },
-        { key: 'colorBorderlineGrades', label: 'Пограничные оценки', checked: currentSettings.colorBorderlineGrades }
-    ];
-
-    colorSettings.forEach(setting => {
-        const item = document.createElement('div');
-        item.className = 'mscp-setting-item';
-        item.innerHTML = `
-            <label class="mscp-label">
-                <input type="checkbox" class="mscp-checkbox" data-key="${setting.key}" ${setting.checked ? 'checked' : ''}>
-                <span>${setting.label}</span>
-            </label>
-        `;
-        section.appendChild(item);
-    });
-
-    // Секция "Дополнительно"
-    const extraTitle = document.createElement('div');
-    extraTitle.className = 'mscp-settings-title';
-    extraTitle.style.marginTop = '12px';
-    extraTitle.textContent = 'Дополнительно:';
-    section.appendChild(extraTitle);
-
-    const extraSettings = [
-        { key: 'hideAverageMark', label: 'Выключать средний балл', checked: currentSettings.hideAverageMark },
-        { key: 'hideBanner', label: 'Убрать баннер', checked: currentSettings.hideBanner }
-    ];
-
-    extraSettings.forEach(setting => {
-        const item = document.createElement('div');
-        item.className = 'mscp-setting-item';
-        item.innerHTML = `
-            <label class="mscp-label">
-                <input type="checkbox" class="mscp-checkbox" data-key="${setting.key}" ${setting.checked ? 'checked' : ''}>
-                <span>${setting.label}</span>
-            </label>
-        `;
-        section.appendChild(item);
-    });
-
-    // Кнопки действий
-    const actionButtons = document.createElement('div');
-    actionButtons.className = 'mscp-action-buttons';
-    actionButtons.innerHTML = `
-        <button class="mscp-btn-action" data-action="download">Скачать журнал</button>
-        <button class="mscp-btn-action" data-action="removeHeader">Удалить шапку</button>
+function createSwitchRow(key, title, description, checked) {
+    const row = document.createElement('label');
+    row.className = 'mscp-row';
+    row.innerHTML = `
+        <span class="mscp-row-text">
+            <span class="mscp-row-title">${title}</span>
+            ${description ? `<span class="mscp-row-desc">${description}</span>` : ''}
+        </span>
+        <span class="mscp-switch">
+            <input type="checkbox" class="mscp-checkbox" data-key="${key}" ${checked ? 'checked' : ''}>
+            <span class="mscp-switch-track"></span>
+        </span>
     `;
-    section.appendChild(actionButtons);
-
-    // Обработчики кнопок
-    actionButtons.querySelector('[data-action="download"]').addEventListener('click', () => {
-        downloadAsFile();
-    });
-    actionButtons.querySelector('[data-action="removeHeader"]').addEventListener('click', () => {
-        removeHeaderAndSetHeight();
-    });
+    return row;
 }
 
 /**
- * Создаёт группу переключателя вида расписания уроков (по одному описанию к каждому виду)
- * @param {Object} currentSettings - текущие настройки
- * @returns {HTMLElement} DOM-элемент с переключателем
+ * Создаёт строку с кнопкой действия: название, пояснение и кнопка справа
+ * @param {string} title - название действия
+ * @param {string} description - пояснение мелким шрифтом
+ * @param {string} buttonText - текст кнопки
+ * @param {function(HTMLButtonElement): void} onClick - обработчик нажатия, получает кнопку
+ * @returns {HTMLElement} DOM-элемент строки
  */
-function createScheduleStyleGroup(currentSettings) {
-    const group = document.createElement('div');
-    group.className = 'mscp-schedule-style';
-    group.dataset.key = 'scheduleStyle';
+function createActionRow(title, description, buttonText, onClick) {
+    const row = document.createElement('div');
+    row.className = 'mscp-row mscp-row-static';
+    row.innerHTML = `
+        <span class="mscp-row-text">
+            <span class="mscp-row-title">${title}</span>
+            <span class="mscp-row-desc">${description}</span>
+        </span>
+        <button type="button" class="mscp-btn-action">${buttonText}</button>
+    `;
 
-    const title = document.createElement('div');
-    title.className = 'mscp-settings-title';
-    title.style.marginTop = '12px';
-    title.textContent = 'Расписание уроков:';
-    group.appendChild(title);
+    const button = row.querySelector('button');
+    button.addEventListener('click', () => onClick(button));
+    return row;
+}
+
+/**
+ * Создаёт вкладку "Журнал": цветной режим, поведение страницы и действия с журналом
+ * @param {Object} currentSettings - текущие настройки
+ * @returns {HTMLElement} DOM-элемент вкладки
+ */
+function createJournalTab(currentSettings) {
+    const tab = document.createElement('div');
+
+    const colorRows = [
+        ['colorAccumulation', 'Накопляемость оценок', 'Полоса у имени ученика по числу оценок'],
+        ['colorLessonGrades', 'Оценки за уроки', 'Цвет ячейки по оценке'],
+        ['colorAverageGrade', 'Средний балл', 'Цвет среднего балла'],
+        ['colorBorderlineGrades', 'Пограничные оценки', 'Уголок у оценки, которой не хватает до границы']
+    ].map(([key, title, description]) => createSwitchRow(key, title, description, currentSettings[key]));
+
+    const pageRows = [
+        createSwitchRow('hideAverageMark', 'Выключать средний балл по теме', 'При каждой загрузке журнала', currentSettings.hideAverageMark),
+        createSwitchRow('hideBanner', 'Убрать баннер', 'Если снять галочку, баннер вернётся после перезагрузки страницы', currentSettings.hideBanner)
+    ];
+
+    const actionRows = [
+        createActionRow('Скачать журнал', 'Сохранить таблицу журнала в файл', 'Скачать', () => downloadAsFile()),
+        createActionRow('Убрать шапку сайта', 'Один раз, до перезагрузки страницы', 'Убрать', button => {
+            try {
+                removeHeaderAndSetHeight();
+                button.textContent = 'Убрана';
+            } catch (error) {
+                console.error('Не удалось убрать шапку:', error);
+                button.textContent = 'Не вышло';
+            }
+            button.disabled = true;
+        })
+    ];
+
+    tab.append(
+        createJournalInfo(),
+        createSection('Цветной режим', ...colorRows),
+        createSection('Страница', ...pageRows),
+        createSection('Действия', ...actionRows)
+    );
+    return tab;
+}
+
+/**
+ * Создаёт плитки со сведениями об открытом журнале
+ * @returns {HTMLElement} DOM-элемент со сведениями
+ */
+function createJournalInfo() {
+    const stats = document.createElement('div');
+    stats.className = 'mscp-stats';
+
+    const rounding = JournalState.isMathRound ? ['4,5', 'математическое'] : ['4,65', 'лицейское'];
+    const items = [
+        [JournalState.countLessons, 'уроков в триместре'],
+        [JournalState.isWeNeed3Grades ? '3' : '5', 'оценок нужно'],
+        [rounding[0], `округление ${rounding[1]}`]
+    ];
+
+    stats.innerHTML = items
+        .map(([value, label]) => `<div class="mscp-stat"><b>${value}</b><span>${label}</span></div>`)
+        .join('');
+    return stats;
+}
+
+/**
+ * Создаёт вкладку "Расписание": вид расписания и параметры заменённого вида
+ * @param {Object} currentSettings - текущие настройки
+ * @returns {HTMLElement} DOM-элемент вкладки
+ */
+function createScheduleTab(currentSettings) {
+    const tab = document.createElement('div');
+
+    const styleSection = createSection('Вид расписания', createScheduleStyleCards(currentSettings));
+    const look = createScheduleLookOptions(currentSettings);
+    styleSection.appendChild(look);
+
+    // Параметры вида нужны только заменённому расписанию
+    const syncLook = () => {
+        const isCustom = tab.querySelector('input[name="mscp-schedule-style"]:checked')?.value === 'custom';
+        look.hidden = !isCustom;
+    };
+    tab.addEventListener('change', syncLook);
+    tab.appendChild(styleSection);
+    syncLook();
+
+    return tab;
+}
+
+/**
+ * Создаёт ряд карточек выбора вида расписания: эскиз, название и короткое пояснение
+ * @param {Object} currentSettings - текущие настройки
+ * @returns {HTMLElement} DOM-элемент с карточками
+ */
+function createScheduleStyleCards(currentSettings) {
+    const cards = document.createElement('div');
+    cards.className = 'mscp-options';
 
     const selected = SCHEDULE_STYLES.some(style => style.value === currentSettings.scheduleStyle)
         ? currentSettings.scheduleStyle
         : DEFAULT_SETTINGS.scheduleStyle;
 
     SCHEDULE_STYLES.forEach(style => {
-        const item = document.createElement('div');
-        item.className = 'mscp-setting-item mscp-style-item';
-        item.innerHTML = `
-            <label class="mscp-label">
-                <input type="radio" class="mscp-radio" data-key="scheduleStyle" name="mscp-schedule-style" value="${style.value}" ${style.value === selected ? 'checked' : ''}>
-                <span>${style.label}</span>
-            </label>
-            <div class="mscp-style-description">${style.description}</div>
+        const option = document.createElement('label');
+        option.className = 'mscp-option';
+        option.innerHTML = `
+            <input type="radio" class="mscp-radio" data-key="scheduleStyle" name="mscp-schedule-style" value="${style.value}" ${style.value === selected ? 'checked' : ''}>
+            ${createScheduleThumbnail(style.value)}
+            <span class="mscp-option-title">${style.label}</span>
+            <span class="mscp-row-desc">${style.description}</span>
         `;
-        group.appendChild(item);
+        cards.appendChild(option);
     });
 
-    const look = createScheduleLookOptions(currentSettings);
-    group.appendChild(look);
-
-    // Легенда видна, пока работает заменённое расписание
-    if (ScheduleLayout.observer) group.appendChild(createScheduleLegend());
-
-    // Параметры вида нужны только заменённому расписанию
-    const syncLook = () => {
-        const isCustom = group.querySelector('input[name="mscp-schedule-style"]:checked')?.value === 'custom';
-        look.classList.toggle('mscp-look-off', !isCustom);
-        look.querySelectorAll('input').forEach(input => { input.disabled = !isCustom; });
-    };
-    group.addEventListener('change', syncLook);
-    syncLook();
-
-    return group;
+    return cards;
 }
 
 /**
- * Создаёт параметры заменённого расписания: как помечать предмет и красить ли классы
+ * Рисует эскиз вида расписания для карточки выбора
+ * @param {string} style - вид расписания: classic, compact или custom
+ * @returns {string} HTML-строка с SVG-элементом
+ */
+function createScheduleThumbnail(style) {
+    const columns = 5;
+    const rects = [];
+
+    for (let column = 0; column < columns; column++) {
+        const x = 8 + column * 40;
+
+        if (style === 'classic') {
+            // Высокие карточки в сетке со шкалой времени
+            const top = 10 + (column % 2) * 14;
+            rects.push(`<rect x="${x}" y="${top}" width="34" height="28" rx="3" fill="#d1d5db"/>`);
+            rects.push(`<rect x="${x}" y="${top + 34}" width="34" height="28" rx="3" fill="#d1d5db"/>`);
+        } else if (style === 'compact') {
+            // Много низких строк, уместившихся в окно
+            for (let row = 0; row < 6; row++) {
+                if ((row + column) % 4 === 3) continue;
+                rects.push(`<rect x="${x}" y="${8 + row * 13}" width="34" height="10" rx="2" fill="#9ca3af"/>`);
+            }
+        } else {
+            // Цветные карточки по номерам уроков
+            const colors = ['#8b5cf6', '#3b82f6', '#14b8a6', '#f59e0b', '#ec4899'];
+            for (let row = 0; row < 4; row++) {
+                if ((row * 2 + column) % 5 === 4) continue;
+                rects.push(`<rect x="${x}" y="${8 + row * 17}" width="34" height="14" rx="3" fill="${colors[(row + column) % colors.length]}"/>`);
+            }
+        }
+    }
+
+    return `<svg class="mscp-thumb" viewBox="0 0 208 76" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${rects.join('')}</svg>`;
+}
+
+/**
+ * Создаёт параметры заменённого расписания: как помечать предмет, цвет класса и время на карточке
  * @param {Object} currentSettings - текущие настройки
  * @returns {HTMLElement} DOM-элемент с параметрами
  */
 function createScheduleLookOptions(currentSettings) {
     const look = document.createElement('div');
-    look.className = 'mscp-look';
+    look.className = 'mscp-subpanel';
 
     const selected = SCHEDULE_SUBJECT_MARKS.some(mark => mark.value === currentSettings.scheduleSubjectMark)
         ? currentSettings.scheduleSubjectMark
         : DEFAULT_SETTINGS.scheduleSubjectMark;
 
     const marks = SCHEDULE_SUBJECT_MARKS.map(mark => `
-        <label class="mscp-label">
+        <label>
             <input type="radio" class="mscp-radio" data-key="scheduleSubjectMark" name="mscp-subject-mark" value="${mark.value}" ${mark.value === selected ? 'checked' : ''}>
             <span>${mark.label}</span>
         </label>
     `).join('');
 
-    look.innerHTML = `
-        <div class="mscp-look-title">Предмет в заменённом расписании:</div>
-        <div class="mscp-look-row">${marks}</div>
-        <div class="mscp-style-description mscp-look-note">Цвет: полоска слева и легенда. Подпись: название предмета на карточке. Не помечать: ни цвета, ни подписи. Если предмет один, цвет не нужен и не показывается.</div>
-        <div class="mscp-setting-item">
-            <label class="mscp-label">
-                <input type="checkbox" class="mscp-checkbox" data-key="scheduleClassColor" ${currentSettings.scheduleClassColor !== false ? 'checked' : ''}>
-                <span>Цвет класса: у одинаковых классов одинаковый цвет</span>
-            </label>
-        </div>
-        <div class="mscp-setting-item">
-            <label class="mscp-label">
-                <input type="checkbox" class="mscp-checkbox" data-key="scheduleShowTime" ${currentSettings.scheduleShowTime !== false ? 'checked' : ''}>
-                <span>Время урока на карточке</span>
-            </label>
-        </div>
+    const markRow = document.createElement('div');
+    markRow.className = 'mscp-row mscp-row-static';
+    markRow.innerHTML = `
+        <span class="mscp-row-text">
+            <span class="mscp-row-title">Предмет на карточке</span>
+            <span class="mscp-row-desc">Цвет — полоска слева. Подпись — название предмета. Если предмет один, он не помечается</span>
+        </span>
+        <span class="mscp-seg">${marks}</span>
     `;
 
+    look.append(
+        markRow,
+        createSwitchRow('scheduleClassColor', 'Цвет класса', 'У одинаковых классов одинаковый цвет', currentSettings.scheduleClassColor !== false),
+        createSwitchRow('scheduleShowTime', 'Время урока', 'Начало и конец урока на карточке', currentSettings.scheduleShowTime !== false)
+    );
+
+    const hint = document.createElement('div');
+    hint.className = 'mscp-row-desc mscp-hint';
+    hint.textContent = 'Значки урока и домашнего задания и цвета предметов — по кнопке ⓘ рядом с настройками на странице расписания.';
+    look.appendChild(hint);
+
     return look;
-}
-
-/**
- * Создаёт легенду заменённого расписания: цвета предметов и значение значков урока и ДЗ
- * @returns {HTMLElement} DOM-элемент с легендой
- */
-function createScheduleLegend() {
-    const box = document.createElement('div');
-    box.className = 'mscp-look';
-
-    const title = document.createElement('div');
-    title.className = 'mscp-look-title';
-    title.textContent = 'Обозначения в расписании:';
-
-    const legend = document.createElement('div');
-    legend.className = 'mscp-legend';
-
-    for (const { subject, color } of ScheduleLayout.legend) {
-        const item = document.createElement('span');
-        item.className = 'mscp-legend-item';
-        const swatch = document.createElement('i');
-        swatch.style.background = color;
-        item.append(swatch, subject);
-        legend.append(item);
-    }
-
-    const key = document.createElement('span');
-    key.className = 'mscp-legend-key';
-    key.append('У — урок, ДЗ — домашнее задание:');
-    for (const [status, text] of [['done', 'заполнено'], ['late', 'не заполнено'], ['wait', 'ещё нет']]) {
-        const badge = document.createElement('span');
-        badge.className = `mscp-badge mscp-badge-${status}`;
-        badge.textContent = text;
-        key.append(badge);
-    }
-    legend.append(key);
-
-    box.append(title, legend);
-    return box;
 }
