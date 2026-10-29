@@ -50,12 +50,28 @@ const CONFIG = {
         SCHEDULE_CARD: '[data-test-component^="scheduleDay-"][data-test-component*="-Card-"]',
         /** Кнопка "предыдущая неделя" в шапке расписания */
         SCHEDULE_WEEK_PREV: '[data-test-component="scheduleHeaderPrevWeek"]',
+        /** Подпись выбранной недели в шапке расписания ("26 - 01 ноября 2026 года") */
+        SCHEDULE_WEEK_LABEL: '[data-test-component="scheduleHeaderPopperDateLeftOn"]',
         /** Кнопка календаря в верхней белой полосе сайта */
         CALENDAR_BUTTON: 'button[data-test-component="appBarCalendarToggle"]'
     },
 
     /** URL-паттерн страницы расписания уроков */
     SCHEDULE_URL_PATTERN: /^https:\/\/authedu\.mosreg\.ru\/teacher\/account\/schedule/,
+
+    /** Расписание коллег: ключи localStorage и время жизни кеша */
+    COLLEAGUES: {
+        /** Кеш списка учителей и недель расписания */
+        CACHE_KEY: 'MSCP_colleagues',
+        /** Закреплённые учителя и последний выбранный (при сбросе кеша остаются) */
+        FAVORITES_KEY: 'MSCP_colleagues_favorites',
+        /** Список учителей обновляется раз в неделю */
+        TEACHERS_TTL_MS: 7 * 24 * 60 * 60 * 1000,
+        /** Текущая и будущие недели обновляются раз в несколько часов (прошедшие — никогда) */
+        WEEK_TTL_MS: 6 * 60 * 60 * 1000,
+        /** Сколько недель держать в кеше */
+        MAX_WEEKS: 80
+    },
 
     /** Заготовки комментариев для карточки выставления оценки */
     COMMENT_PRESETS: ['Ответ теории', 'Решение задач', 'Проверка ДЗ'],

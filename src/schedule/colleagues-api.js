@@ -1,0 +1,314 @@
+// ============================================================
+// РАСПИСАНИЕ КОЛЛЕГ: запросы к API сайта и кеш в localStorage
+// ============================================================
+
+/**
+ * Получает список учителей школы и недельное расписание любого учителя
+ * - Вход берётся у самого сайта: токен из cookie, год и школа из его localStorage, пароли не нужны
+ * - Всё полученное кладётся в localStorage (ключ CONFIG.COLLEAGUES.CACHE_KEY), чтобы не гонять лишние запросы:
+ *   список учителей живёт неделю, текущая и будущие недели — несколько часов, прошедшие недели не меняются
+ * - Если сайт не ответил, а в кеше есть устаревшие данные, отдаются они с пометкой stale
+ * - Закреплённые учителя и последний выбранный лежат отдельным ключом: сброс кеша их не трогает
+ */
+const ColleagueApi = {
+    /** @type {{teachers: ?{key: string, at: number, list: Array}, weeks: Object}|null} Кеш в памяти, зеркало localStorage */
+    store: null,
+
+    /**
+     * Читает значение cookie
+     * @param {string} name - имя cookie
+     * @returns {string} значение; пустая строка, если cookie нет
+     */
+    readCookie(name) {
+        const part = document.cookie.split('; ').find(item => item.startsWith(`${name}=`));
+        return part ? decodeURIComponent(part.slice(name.length + 1)) : '';
+    },
+
+    /**
+     * Читает JSON из localStorage сайта
+     * @param {string} key - ключ
+     * @returns {*} значение; null, если ключа нет или он не JSON
+     */
+    readSiteValue(key) {
+        try {
+            return JSON.parse(localStorage.getItem(key));
+        } catch (error) {
+            return null;
+        }
+    },
+
+    /**
+     * Данные текущего входа: токен, учебный год, школа и профиль учителя
+     * @returns {{token: string, year: number, school: number, profile: number}|null} null, если вход не определён
+     */
+    session() {
+        const info = this.readSiteValue('profileInfo');
+        const year = Number(this.readSiteValue('MES_API_YEAR_ID') ?? this.readSiteValue('currentAcademicYear')?.id);
+        const profile = Number(info?.id ?? this.readCookie('profile_id'));
+        const token = this.readCookie('aupd_token');
+
+        if (!token || !year || !info?.school_id || !profile) return null;
+        return { token, year, school: info.school_id, profile };
+    },
+
+    /**
+     * GET-запрос к API сайта
+     * @param {string} path - путь после /api/ej
+     * @param {Object} params - параметры запроса
+     * @returns {Promise<Array>} тело ответа
+     * @throws {Error} с полем status (0 — вход не определён, иначе код ответа сайта)
+     */
+    async get(path, params) {
+        const session = this.session();
+        if (!session) throw Object.assign(new Error('Не удалось определить вход'), { status: 0 });
+
+        const response = await fetch(`/api/ej${path}?${new URLSearchParams(params)}`, {
+            headers: {
+                'Auth-Token': session.token,
+                'Profile-Id': String(session.profile),
+                'x-mes-subsystem': 'teacherweb',
+                Accept: 'application/json'
+            }
+        });
+        if (!response.ok) throw Object.assign(new Error(`Сайт ответил ${response.status}`), { status: response.status });
+
+        return response.json();
+    },
+
+    /**
+     * Понятное сообщение об ошибке запроса
+     * @param {Error} error - ошибка из get()
+     * @returns {string}
+     */
+    describeError(error) {
+        if (error.status === 0) return 'Не удалось определить вход. Обновите страницу.';
+        if (error.status === 401) return 'Вход устарел. Обновите страницу или войдите заново.';
+        if (error.status === 403) return 'У вашей учётной записи нет доступа к расписанию этого учителя.';
+        return `Не удалось получить данные: ${error.message}`;
+    },
+
+    // ---------- даты ----------
+
+    /**
+     * Дата в виде ГГГГ-ММ-ДД по местному времени (toISOString сдвигает день по UTC)
+     * @param {Date} date
+     * @returns {string}
+     */
+    isoDate(date) {
+        const pad = value => String(value).padStart(2, '0');
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+    },
+
+    /**
+     * Прибавляет дни, время обнуляется
+     * @param {Date} date
+     * @param {number} days
+     * @returns {Date}
+     */
+    addDays(date, days) {
+        return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+    },
+
+    /**
+     * Понедельник недели, в которую входит дата
+     * @param {Date} date
+     * @returns {Date}
+     */
+    weekStart(date) {
+        return this.addDays(date, -((date.getDay() + 6) % 7));
+    },
+
+    // ---------- кеш ----------
+
+    /**
+     * Кеш из памяти; при первом обращении читается из localStorage
+     * @returns {{teachers: ?Object, weeks: Object}}
+     */
+    load() {
+        if (this.store) return this.store;
+
+        let saved = null;
+        try {
+            saved = JSON.parse(localStorage.getItem(CONFIG.COLLEAGUES.CACHE_KEY));
+        } catch (error) {
+            console.error('Ошибка чтения кеша расписаний:', error);
+        }
+
+        this.store = { teachers: saved?.teachers ?? null, weeks: saved?.weeks ?? {} };
+        return this.store;
+    },
+
+    /**
+     * Сохраняет кеш; лишние старые недели удаляются, при нехватке места убирается половина недель
+     * @returns {void}
+     */
+    save() {
+        const weeks = this.store.weeks;
+        const keys = Object.keys(weeks).sort((a, b) => weeks[a].at - weeks[b].at);
+        keys.slice(0, Math.max(0, keys.length - CONFIG.COLLEAGUES.MAX_WEEKS)).forEach(key => delete weeks[key]);
+
+        for (let attempt = 0; attempt < 2; attempt++) {
+            try {
+                localStorage.setItem(CONFIG.COLLEAGUES.CACHE_KEY, JSON.stringify(this.store));
+                return;
+            } catch (error) {
+                const oldest = Object.keys(weeks).sort((a, b) => weeks[a].at - weeks[b].at);
+                oldest.slice(0, Math.ceil(oldest.length / 2)).forEach(key => delete weeks[key]);
+            }
+        }
+    },
+
+    /**
+     * Полностью очищает кеш расписаний (закреплённые учителя остаются)
+     * @returns {void}
+     */
+    clear() {
+        this.store = { teachers: null, weeks: {} };
+        try {
+            localStorage.removeItem(CONFIG.COLLEAGUES.CACHE_KEY);
+        } catch (error) {
+            console.error('Ошибка очистки кеша расписаний:', error);
+        }
+    },
+
+    /**
+     * Закреплённые учителя и последний выбранный
+     * @returns {{ids: number[], last: ?number}}
+     */
+    loadFavorites() {
+        try {
+            const saved = JSON.parse(localStorage.getItem(CONFIG.COLLEAGUES.FAVORITES_KEY));
+            return { ids: saved?.ids ?? [], last: saved?.last ?? null };
+        } catch (error) {
+            return { ids: [], last: null };
+        }
+    },
+
+    /**
+     * @param {{ids: number[], last: ?number}} favorites
+     * @returns {void}
+     */
+    saveFavorites(favorites) {
+        try {
+            localStorage.setItem(CONFIG.COLLEAGUES.FAVORITES_KEY, JSON.stringify(favorites));
+        } catch (error) {
+            console.error('Ошибка сохранения списка учителей:', error);
+        }
+    },
+
+    // ---------- данные ----------
+
+    /**
+     * Список учителей школы: кеш, если он свежий, иначе запрос (по 100 на страницу)
+     * @param {boolean} [force=false] - игнорировать кеш
+     * @returns {Promise<{list: Array<{id: number, name: string, subjects: string}>, at: number, stale: boolean}>}
+     */
+    async getTeachers(force = false) {
+        const { year, school } = this.session() ?? {};
+        const key = `${school}-${year}`;
+        const cached = this.load().teachers;
+        const usable = cached?.key === key ? cached : null;
+
+        if (usable && !force && Date.now() - usable.at < CONFIG.COLLEAGUES.TEACHERS_TTL_MS) {
+            return { list: usable.list, at: usable.at, stale: false };
+        }
+
+        try {
+            const profiles = [];
+            for (let page = 1; page <= 20; page++) {
+                const data = await this.get('/core/teacher/v1/teacher_profiles', {
+                    academic_year_id: year, school_id: school, per_page: 100, page
+                });
+                profiles.push(...data);
+                if (data.length < 100) break;
+            }
+
+            const list = profiles
+                .filter(profile => !profile.deleted && !profile.virtual)
+                .map(profile => ({
+                    id: profile.id,
+                    name: profile.name,
+                    subjects: (profile.subjects ?? []).map(subject => subject.name).slice(0, 3).join(', ')
+                }))
+                .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+
+            const store = this.load();
+            store.teachers = { key, at: Date.now(), list };
+            this.save();
+            return { list, at: store.teachers.at, stale: false };
+        } catch (error) {
+            if (usable) return { list: usable.list, at: usable.at, stale: true };
+            throw error;
+        }
+    },
+
+    /**
+     * Уроки учителя за неделю по дням и номерам уроков школьного звонка
+     * Отменённые уроки и уроки, перенесённые на другую дату, не берутся: сайт отдаёт их на старом месте
+     * @param {number} teacherId - id профиля учителя
+     * @param {Date} monday - понедельник нужной недели
+     * @param {boolean} [force=false] - игнорировать кеш
+     * @returns {Promise<{days: Object<string, Array<[number, string, string, string]>>, at: number, stale: boolean, fromCache: boolean}>}
+     *          days: {ГГГГ-ММ-ДД: [[номер урока, время начала, класс, предмет], ...]}
+     */
+    async getWeek(teacherId, monday, force = false) {
+        const from = this.isoDate(monday);
+        const to = this.isoDate(this.addDays(monday, 6));
+        const key = `${teacherId}|${from}`;
+        const cached = this.load().weeks[key];
+
+        // Прошедшая неделя не меняется, остальные устаревают
+        const isPast = to < this.isoDate(new Date());
+        const isFresh = cached && (isPast || Date.now() - cached.at < CONFIG.COLLEAGUES.WEEK_TTL_MS);
+        if (isFresh && !force) return { days: cached.days, at: cached.at, stale: false, fromCache: true };
+
+        try {
+            const items = [];
+            for (let page = 1; page <= 5; page++) {
+                const data = await this.get('/plan/teacher/v1/schedule_items', {
+                    academic_year_id: this.session()?.year, teacher_id: teacherId, from, to,
+                    with_group_class_subject_info: true, per_page: 300, page
+                });
+                items.push(...data);
+                if (data.length < 300) break;
+            }
+
+            const days = this.compactWeek(items);
+            this.load().weeks[key] = { at: Date.now(), days };
+            this.save();
+            return { days, at: this.load().weeks[key].at, stale: false, fromCache: false };
+        } catch (error) {
+            if (cached) return { days: cached.days, at: cached.at, stale: true, fromCache: true };
+            throw error;
+        }
+    },
+
+    /**
+     * Сворачивает ответ сайта в короткий вид для кеша
+     * Номер урока считается по времени начала: поле lesson_number в ответе не школьный номер
+     * @param {Array} items - записи schedule_items
+     * @returns {Object<string, Array<[number, string, string, string]>>}
+     */
+    compactWeek(items) {
+        const pad = value => String(value).padStart(2, '0');
+        const days = {};
+
+        items.forEach(item => {
+            if (item.cancelled || item.transferred_to_date) return;
+
+            const [year, month, day] = item.date;
+            const [hours, minutes] = item.time;
+            const iso = `${year}-${pad(month)}-${pad(day)}`;
+
+            (days[iso] ??= []).push([
+                lessonNumberFromStart(hours, minutes),
+                `${pad(hours)}:${pad(minutes)}`,
+                item.class_unit_name ?? '',
+                item.subject_name ?? ''
+            ]);
+        });
+
+        Object.values(days).forEach(lessons => lessons.sort((a, b) => a[1].localeCompare(b[1])));
+        return days;
+    }
+};

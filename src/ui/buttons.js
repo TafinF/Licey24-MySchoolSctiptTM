@@ -31,6 +31,25 @@ function createSettingsButton() {
 }
 
 /**
+ * Создаёт кнопку расписания коллег
+ * @returns {HTMLElement} контейнер с кнопкой
+ */
+function createColleaguesButton() {
+    const buttonContainer = document.createElement('div');
+    buttonContainer.className = 'mscp-colleagues-box';
+    buttonContainer.style.cssText = 'box-shadow: 1px 1px 4px 0px rgba(0, 0, 0, 0.07); border-radius: 8px; display: inline-flex;';
+
+    const button = document.createElement('button');
+    button.className = 'mscp-button';
+    button.innerHTML = createColleaguesIcon();
+    button.title = 'Расписание коллег';
+    button.addEventListener('click', () => Colleagues.open());
+    buttonContainer.appendChild(button);
+
+    return buttonContainer;
+}
+
+/**
  * Вставляет кнопки управления в заголовок журнала
  * - Ожидает загрузки DOM-элементов
  * - Создаёт стили и кнопки

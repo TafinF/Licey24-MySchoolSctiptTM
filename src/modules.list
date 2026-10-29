@@ -24,6 +24,8 @@ ui/comment-presets.js
 schedule/compact.js
 schedule/lesson-parser.js
 schedule/layout.js
+schedule/colleagues-api.js
+schedule/colleagues.js
 schedule/legend.js
 schedule/page.js
 

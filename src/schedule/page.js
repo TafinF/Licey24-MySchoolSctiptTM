@@ -4,7 +4,7 @@
 
 /**
  * Управляет страницей "Расписание уроков"
- * - Ставит кнопку настроек справа от переключателя недель
+ * - Ставит кнопки расписания коллег и настроек справа от переключателя недель
  * - Включает вид расписания, выбранный в настройках: классический (без изменений),
  *   компактный (ScheduleCompact) или заменённый (ScheduleLayout)
  */
@@ -39,6 +39,8 @@ const SchedulePage = {
         ScheduleLayout.stop();
         ScheduleCompact.stop();
         document.querySelector('.mscp-button-box')?.remove();
+        document.querySelector('.mscp-colleagues-box')?.remove();
+        Colleagues.close();
         ScheduleLegend.stop();
     },
 
@@ -78,8 +80,10 @@ const SchedulePage = {
         }
         if (!weekSwitch?.parentElement) return;
 
+        const colleagues = createColleaguesButton();
+        colleagues.style.marginLeft = '8px';
         const button = createSettingsButton();
         button.style.marginLeft = '8px';
-        weekSwitch.append(ScheduleLegend.createButton(), button);
+        weekSwitch.append(colleagues, ScheduleLegend.createButton(), button);
     }
 };
