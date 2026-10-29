@@ -18,6 +18,19 @@ function createColleaguesIcon() {
 }
 
 /**
+ * Создаёт SVG-иконку домашнего задания на день (тетрадный лист с карандашом)
+ * @returns {string} HTML-строка с SVG-элементом
+ */
+function createHomeworkIcon() {
+    return `
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#909090" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M11 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"></path>
+            <path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"></path>
+        </svg>
+    `;
+}
+
+/**
  * Создаёт SVG-иконку легенды расписания (буква i в круге)
  * @returns {string} HTML-строка с SVG-элементом
  */
