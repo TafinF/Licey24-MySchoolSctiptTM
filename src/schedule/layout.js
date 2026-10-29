@@ -507,8 +507,11 @@ const ScheduleLayout = {
                 border-color: #9ca3af;
                 border-left-color: var(--mscp-c, #9ca3af);
             }
+            /* Рамка текущего урока внутри карточки: снаружи её закрывали бы соседние карточки (зазор между ними 2px) */
             body.mscp-schedule .mscp-card-now {
-                box-shadow: 0 0 0 2px #3b6cf0;
+                border-color: #3b6cf0;
+                border-left-color: var(--mscp-c, #3b6cf0);
+                box-shadow: inset 0 0 0 1px #3b6cf0;
             }
             body.mscp-schedule .mscp-card-head {
                 display: flex;
