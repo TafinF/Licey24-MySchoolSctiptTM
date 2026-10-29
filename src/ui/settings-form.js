@@ -18,6 +18,12 @@ const SETTINGS_TABS = [
         label: 'Расписание',
         isAvailable: () => true,
         build: createScheduleTab
+    },
+    {
+        id: 'access',
+        label: 'Токен',
+        isAvailable: () => true,
+        build: createAccessTab
     }
 ];
 
@@ -175,6 +181,35 @@ function createScheduleTab(currentSettings) {
     tab.appendChild(styleSection);
     syncLook();
 
+    return tab;
+}
+
+/**
+ * Создаёт вкладку "Токен": токен входа для проекта школьного журнала
+ * @returns {HTMLElement} DOM-элемент вкладки
+ */
+function createAccessTab() {
+    const tab = document.createElement('div');
+
+    const row = createActionRow(
+        'Токен входа (token.json)',
+        'Файл для проекта школьного журнала. Токен даёт доступ к вашей учётной записи: никому его не передавайте и не выкладывайте. '
+            + 'Действует около 10 суток, потом нужно скачать новый',
+        'Скачать',
+        button => {
+            const result = downloadToken();
+            if (!result.ok) {
+                button.textContent = 'Нет токена';
+            } else if (result.daysLeft === undefined) {
+                button.textContent = 'Скачан';
+            } else {
+                button.textContent = `Скачан, ещё ${Math.max(0, Math.floor(result.daysLeft))} сут`;
+            }
+            setTimeout(() => { button.textContent = 'Скачать'; }, 4000);
+        }
+    );
+
+    tab.appendChild(createSection('Проект «Школьный журнал»', row));
     return tab;
 }
 
