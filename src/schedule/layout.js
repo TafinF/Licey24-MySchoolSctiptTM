@@ -31,8 +31,8 @@ const ScheduleLayout = {
     /** @type {boolean} Идёт ли сейчас открытие журнала через меню сайта */
     isOpening: false,
 
-    /** @type {{showColor: boolean, showLabel: boolean, classColor: boolean}} Что показывать на карточках (из настроек) */
-    options: { showColor: true, showLabel: false, classColor: true },
+    /** @type {{showColor: boolean, showLabel: boolean, classColor: boolean, showTime: boolean}} Что показывать на карточках (из настроек) */
+    options: { showColor: true, showLabel: false, classColor: true, showTime: true },
 
     /**
      * Читает из настроек, как помечать предметы и классы
@@ -41,9 +41,10 @@ const ScheduleLayout = {
     configure() {
         const settings = loadSettings();
         this.options = {
-            showColor: settings.scheduleSubjectMark !== 'label',
+            showColor: settings.scheduleSubjectMark !== 'label' && settings.scheduleSubjectMark !== 'none',
             showLabel: settings.scheduleSubjectMark === 'label' || settings.scheduleSubjectMark === 'both',
-            classColor: settings.scheduleClassColor !== false
+            classColor: settings.scheduleClassColor !== false,
+            showTime: settings.scheduleShowTime !== false
         };
     },
 
@@ -176,9 +177,9 @@ const ScheduleLayout = {
 
         // Масштаб содержимого (1 = класс 19px, время 12px): карточка помещается в строку и в столбец.
         // Числа — размер содержимого при масштабе 1: ширина (прямоугольник класса добавляет отступы)
-        // и высота (подпись предмета добавляет строку)
+        // и высота (подпись предмета и время добавляют по строке)
         const needWidth = this.options.classColor ? 142 : 132;
-        const needHeight = this.options.showLabel ? 66 : 52;
+        const needHeight = 37 + (this.options.showLabel ? 14 : 0) + (this.options.showTime ? 15 : 0);
         const scale = Math.min(Math.max(Math.min(columnWidth / needWidth, (height / rows.weight) / needHeight), 0.6), 1.6);
 
         // Колонка номеров уроков (бывшая шкала времени) строится по той же сетке, что и дни
@@ -308,7 +309,8 @@ const ScheduleLayout = {
         // Подпись предмета нужна, только если класс показан отдельно: иначе предмет уже стоит на его месте
         const label = this.options.showLabel && data.className ? data.subject : '';
         const classBox = this.options.classColor ? classColor(data.className) : '';
-        const signature = JSON.stringify([data, color, label, classBox]);
+        const showTime = this.options.showTime;
+        const signature = JSON.stringify([data, color, label, classBox, showTime]);
         let element = slot.querySelector(':scope > .mscp-card');
         if (element?.dataset.signature === signature) return;
 
@@ -345,7 +347,7 @@ const ScheduleLayout = {
 
         element.append(head);
         if (label) element.append(create('div', 'mscp-card-subject', label));
-        element.append(create('div', 'mscp-card-time', `${data.start}–${data.end}`));
+        if (showTime) element.append(create('div', 'mscp-card-time', `${data.start}–${data.end}`));
         element.addEventListener('click', () => this.openJournal(slot));
 
         slot.append(element);

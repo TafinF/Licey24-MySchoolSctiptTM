@@ -202,17 +202,20 @@ const DEFAULT_SETTINGS = {
     hideBanner: false,
     /** Вид расписания уроков: classic — сайта, compact — сжатое, custom — заменённое своим */
     scheduleStyle: 'custom',
-    /** Пометка предмета в заменённом расписании: color — цвет, label — подпись, both — и то и другое */
+    /** Пометка предмета в заменённом расписании: color — цвет, label — подпись, both — и то и другое, none — никак */
     scheduleSubjectMark: 'color',
     /** Цветной прямоугольник у класса в заменённом расписании */
-    scheduleClassColor: true
+    scheduleClassColor: true,
+    /** Время начала и конца урока на карточке в заменённом расписании */
+    scheduleShowTime: true
 };
 
 /** Способы пометить предмет в заменённом расписании */
 const SCHEDULE_SUBJECT_MARKS = [
     { value: 'color', label: 'Цвет' },
     { value: 'label', label: 'Подпись' },
-    { value: 'both', label: 'Цвет и подпись' }
+    { value: 'both', label: 'Цвет и подпись' },
+    { value: 'none', label: 'Не помечать' }
 ];
 
 /** Виды расписания уроков для окна настроек */

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         My School Color Point
 // @namespace    http://tampermonkey.net/
-// @version      2026-10-29_09-28-40
+// @version      2026-10-29_09-31-30
 // @description  Окрашивает оценки в разные цвета в Моя Школа
 // @author       Tafintsev Feodor taf.f11@ya.ru
 // @match        https://authedu.mosreg.ru/*
@@ -22,7 +22,7 @@
  * Используется в Tampermonkey и отображается в меню настроек
  * Подставляется автоматически при сборке (build.sh)
  */
-const VERSION = '2026-10-29_09-28-40';
+const VERSION = '2026-10-29_09-31-30';
 
 /**
  * Основная конфигурация скрипта
@@ -217,17 +217,20 @@ const DEFAULT_SETTINGS = {
     hideBanner: false,
     /** Вид расписания уроков: classic — сайта, compact — сжатое, custom — заменённое своим */
     scheduleStyle: 'custom',
-    /** Пометка предмета в заменённом расписании: color — цвет, label — подпись, both — и то и другое */
+    /** Пометка предмета в заменённом расписании: color — цвет, label — подпись, both — и то и другое, none — никак */
     scheduleSubjectMark: 'color',
     /** Цветной прямоугольник у класса в заменённом расписании */
-    scheduleClassColor: true
+    scheduleClassColor: true,
+    /** Время начала и конца урока на карточке в заменённом расписании */
+    scheduleShowTime: true
 };
 
 /** Способы пометить предмет в заменённом расписании */
 const SCHEDULE_SUBJECT_MARKS = [
     { value: 'color', label: 'Цвет' },
     { value: 'label', label: 'Подпись' },
-    { value: 'both', label: 'Цвет и подпись' }
+    { value: 'both', label: 'Цвет и подпись' },
+    { value: 'none', label: 'Не помечать' }
 ];
 
 /** Виды расписания уроков для окна настроек */
@@ -2374,8 +2377,8 @@ const ScheduleLayout = {
     /** @type {boolean} Идёт ли сейчас открытие журнала через меню сайта */
     isOpening: false,
 
-    /** @type {{showColor: boolean, showLabel: boolean, classColor: boolean}} Что показывать на карточках (из настроек) */
-    options: { showColor: true, showLabel: false, classColor: true },
+    /** @type {{showColor: boolean, showLabel: boolean, classColor: boolean, showTime: boolean}} Что показывать на карточках (из настроек) */
+    options: { showColor: true, showLabel: false, classColor: true, showTime: true },
 
     /**
      * Читает из настроек, как помечать предметы и классы
@@ -2384,9 +2387,10 @@ const ScheduleLayout = {
     configure() {
         const settings = loadSettings();
         this.options = {
-            showColor: settings.scheduleSubjectMark !== 'label',
+            showColor: settings.scheduleSubjectMark !== 'label' && settings.scheduleSubjectMark !== 'none',
             showLabel: settings.scheduleSubjectMark === 'label' || settings.scheduleSubjectMark === 'both',
-            classColor: settings.scheduleClassColor !== false
+            classColor: settings.scheduleClassColor !== false,
+            showTime: settings.scheduleShowTime !== false
         };
     },
 
@@ -2519,9 +2523,9 @@ const ScheduleLayout = {
 
         // Масштаб содержимого (1 = класс 19px, время 12px): карточка помещается в строку и в столбец.
         // Числа — размер содержимого при масштабе 1: ширина (прямоугольник класса добавляет отступы)
-        // и высота (подпись предмета добавляет строку)
+        // и высота (подпись предмета и время добавляют по строке)
         const needWidth = this.options.classColor ? 142 : 132;
-        const needHeight = this.options.showLabel ? 66 : 52;
+        const needHeight = 37 + (this.options.showLabel ? 14 : 0) + (this.options.showTime ? 15 : 0);
         const scale = Math.min(Math.max(Math.min(columnWidth / needWidth, (height / rows.weight) / needHeight), 0.6), 1.6);
 
         // Колонка номеров уроков (бывшая шкала времени) строится по той же сетке, что и дни
@@ -2651,7 +2655,8 @@ const ScheduleLayout = {
         // Подпись предмета нужна, только если класс показан отдельно: иначе предмет уже стоит на его месте
         const label = this.options.showLabel && data.className ? data.subject : '';
         const classBox = this.options.classColor ? classColor(data.className) : '';
-        const signature = JSON.stringify([data, color, label, classBox]);
+        const showTime = this.options.showTime;
+        const signature = JSON.stringify([data, color, label, classBox, showTime]);
         let element = slot.querySelector(':scope > .mscp-card');
         if (element?.dataset.signature === signature) return;
 
@@ -2688,7 +2693,7 @@ const ScheduleLayout = {
 
         element.append(head);
         if (label) element.append(create('div', 'mscp-card-subject', label));
-        element.append(create('div', 'mscp-card-time', `${data.start}–${data.end}`));
+        if (showTime) element.append(create('div', 'mscp-card-time', `${data.start}–${data.end}`));
         element.addEventListener('click', () => this.openJournal(slot));
 
         slot.append(element);
@@ -3379,11 +3384,17 @@ function createScheduleLookOptions(currentSettings) {
     look.innerHTML = `
         <div class="mscp-look-title">Предмет в заменённом расписании:</div>
         <div class="mscp-look-row">${marks}</div>
-        <div class="mscp-style-description mscp-look-note">Цвет: полоска слева и легенда. Подпись: название предмета на карточке. Если предмет один, цвет не нужен и не показывается.</div>
+        <div class="mscp-style-description mscp-look-note">Цвет: полоска слева и легенда. Подпись: название предмета на карточке. Не помечать: ни цвета, ни подписи. Если предмет один, цвет не нужен и не показывается.</div>
         <div class="mscp-setting-item">
             <label class="mscp-label">
                 <input type="checkbox" class="mscp-checkbox" data-key="scheduleClassColor" ${currentSettings.scheduleClassColor !== false ? 'checked' : ''}>
                 <span>Цвет класса: у одинаковых классов одинаковый цвет</span>
+            </label>
+        </div>
+        <div class="mscp-setting-item">
+            <label class="mscp-label">
+                <input type="checkbox" class="mscp-checkbox" data-key="scheduleShowTime" ${currentSettings.scheduleShowTime !== false ? 'checked' : ''}>
+                <span>Время урока на карточке</span>
             </label>
         </div>
     `;

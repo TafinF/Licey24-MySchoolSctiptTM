@@ -194,11 +194,17 @@ function createScheduleLookOptions(currentSettings) {
     look.innerHTML = `
         <div class="mscp-look-title">Предмет в заменённом расписании:</div>
         <div class="mscp-look-row">${marks}</div>
-        <div class="mscp-style-description mscp-look-note">Цвет: полоска слева и легенда. Подпись: название предмета на карточке. Если предмет один, цвет не нужен и не показывается.</div>
+        <div class="mscp-style-description mscp-look-note">Цвет: полоска слева и легенда. Подпись: название предмета на карточке. Не помечать: ни цвета, ни подписи. Если предмет один, цвет не нужен и не показывается.</div>
         <div class="mscp-setting-item">
             <label class="mscp-label">
                 <input type="checkbox" class="mscp-checkbox" data-key="scheduleClassColor" ${currentSettings.scheduleClassColor !== false ? 'checked' : ''}>
                 <span>Цвет класса: у одинаковых классов одинаковый цвет</span>
+            </label>
+        </div>
+        <div class="mscp-setting-item">
+            <label class="mscp-label">
+                <input type="checkbox" class="mscp-checkbox" data-key="scheduleShowTime" ${currentSettings.scheduleShowTime !== false ? 'checked' : ''}>
+                <span>Время урока на карточке</span>
             </label>
         </div>
     `;
