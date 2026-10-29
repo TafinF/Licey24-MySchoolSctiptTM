@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         My School Color Point
 // @namespace    http://tampermonkey.net/
-// @version      2026-10-29_14-05-38
+// @version      2026-10-29_15-11-56
 // @description  Окрашивает оценки в разные цвета в Моя Школа
 // @author       Tafintsev Feodor taf.f11@ya.ru
 // @match        https://authedu.mosreg.ru/*
@@ -22,7 +22,7 @@
  * Используется в Tampermonkey и отображается в меню настроек
  * Подставляется автоматически при сборке (build.sh)
  */
-const VERSION = '2026-10-29_14-05-38';
+const VERSION = '2026-10-29_15-11-56';
 
 /**
  * Основная конфигурация скрипта
@@ -65,12 +65,28 @@ const CONFIG = {
         SCHEDULE_CARD: '[data-test-component^="scheduleDay-"][data-test-component*="-Card-"]',
         /** Кнопка "предыдущая неделя" в шапке расписания */
         SCHEDULE_WEEK_PREV: '[data-test-component="scheduleHeaderPrevWeek"]',
+        /** Подпись выбранной недели в шапке расписания ("26 - 01 ноября 2026 года") */
+        SCHEDULE_WEEK_LABEL: '[data-test-component="scheduleHeaderPopperDateLeftOn"]',
         /** Кнопка календаря в верхней белой полосе сайта */
         CALENDAR_BUTTON: 'button[data-test-component="appBarCalendarToggle"]'
     },
 
     /** URL-паттерн страницы расписания уроков */
     SCHEDULE_URL_PATTERN: /^https:\/\/authedu\.mosreg\.ru\/teacher\/account\/schedule/,
+
+    /** Расписание коллег: ключи localStorage и время жизни кеша */
+    COLLEAGUES: {
+        /** Кеш списка учителей и недель расписания */
+        CACHE_KEY: 'MSCP_colleagues',
+        /** Закреплённые учителя и последний выбранный (при сбросе кеша остаются) */
+        FAVORITES_KEY: 'MSCP_colleagues_favorites',
+        /** Список учителей обновляется раз в неделю */
+        TEACHERS_TTL_MS: 7 * 24 * 60 * 60 * 1000,
+        /** Текущая и будущие недели обновляются раз в несколько часов (прошедшие — никогда) */
+        WEEK_TTL_MS: 6 * 60 * 60 * 1000,
+        /** Сколько недель держать в кеше */
+        MAX_WEEKS: 80
+    },
 
     /** Заготовки комментариев для карточки выставления оценки */
     COMMENT_PRESETS: ['Ответ теории', 'Решение задач', 'Проверка ДЗ'],
@@ -240,19 +256,17 @@ const SCHEDULE_STYLES = [
     {
         value: 'classic',
         label: 'Классическое',
-        description: 'Расписание сайта без изменений.'
+        description: 'Как на сайте'
     },
     {
         value: 'compact',
         label: 'Компактное',
-        description: 'Расписание сайта сжато до размера окна: уроки по строкам времени начала, '
-            + 'название журнала сокращено, тема скрыта, остаются время, кабинет и значки урока и ДЗ.'
+        description: 'Сжато до размера окна, без тем'
     },
     {
         value: 'custom',
         label: 'Заменённое',
-        description: 'Своя сетка: на карточке класс, время начала и конца и два статуса (урок и ДЗ). '
-            + 'Предметы помечены цветом, названия в настройках (обозначения). Клик по карточке открывает урок в журнале.'
+        description: 'Своя сетка по номерам уроков; клик открывает журнал'
     }
 ];
 
@@ -1574,205 +1588,366 @@ function createStyles() {
         }
 
         /* =============================================
-           СТИЛИ МОДАЛЬНОГО ОКНА
+           СТИЛИ ОКНА НАСТРОЕК
            ============================================= */
 
         .mscp-modal-overlay {
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.6);
+            inset: 0;
+            background-color: rgba(15, 23, 42, 0.55);
             display: flex;
             justify-content: center;
             align-items: center;
             z-index: 1000;
-            font-family: Arial, sans-serif;
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
         }
         .mscp-modal-window {
+            display: flex;
+            flex-direction: column;
+            width: 720px;
+            max-width: calc(100vw - 32px);
+            max-height: calc(100vh - 48px);
             background-color: white;
-            border-radius: 12px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-            min-width: 320px;
-            max-width: 400px;
+            border-radius: 14px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
             overflow: hidden;
+            color: #1f2937;
+        }
+        /* С вкладками высота постоянная, чтобы окно не прыгало при переключении */
+        .mscp-modal-window.mscp-has-nav {
+            height: min(580px, calc(100vh - 48px));
         }
         .mscp-modal-header {
-            background-color: #f8f9fa;
-            padding: 20px 24px;
-            border-bottom: 1px solid #e9ecef;
+            flex: none;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            padding: 14px 18px 14px 24px;
+            border-bottom: 1px solid #e5e7eb;
         }
         .mscp-modal-title {
             margin: 0;
-            font-size: 18px;
+            font-size: 17px;
             font-weight: 600;
-            color: #333;
+            color: #111827;
+        }
+        .mscp-modal-version {
+            margin-left: 10px;
+            font-size: 12px;
+            font-weight: 400;
+            color: #9ca3af;
         }
         .mscp-close-btn {
             background: none;
             border: none;
-            font-size: 28px;
+            font-size: 26px;
+            line-height: 1;
             cursor: pointer;
-            color: #6c757d;
-            width: 40px;
-            height: 40px;
+            color: #6b7280;
+            width: 36px;
+            height: 36px;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: all 0.2s ease;
+            transition: background-color 0.2s ease;
         }
         .mscp-close-btn:hover {
-            background-color: #e9ecef;
-            color: #333;
+            background-color: #eef0f4;
+            color: #111827;
+        }
+
+        .mscp-modal-body {
+            flex: 1;
+            display: flex;
+            min-height: 0;
+        }
+        .mscp-modal-nav {
+            flex: none;
+            width: 180px;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            background-color: #f8f9fb;
+            border-right: 1px solid #e5e7eb;
+        }
+        .mscp-modal-nav[hidden] {
+            display: none;
+        }
+        .mscp-nav-item {
+            text-align: left;
+            padding: 9px 12px;
+            border: none;
+            border-radius: 8px;
+            background: none;
+            font: inherit;
+            font-size: 14px;
+            color: #4b5563;
+            cursor: pointer;
+        }
+        .mscp-nav-item:hover {
+            background-color: #eef0f4;
+        }
+        .mscp-nav-item.mscp-active {
+            background-color: #e4e9fc;
+            color: #2f4bc4;
+            font-weight: 600;
         }
         .mscp-modal-content {
-            padding: 24px;
+            flex: 1;
+            min-width: 0;
+            overflow-y: auto;
+            padding: 20px 24px 8px;
         }
-        .mscp-info-block {
-            padding: 12px 16px;
-            background-color: #f8f9fa;
-            border-radius: 8px;
-            border: 1px solid #e9ecef;
-            font-size: 13px;
-            color: #495057;
-            line-height: 1.6;
+
+        .mscp-section {
+            margin-bottom: 22px;
         }
-        .mscp-info-block div {
-            padding: 2px 0;
+        .mscp-section-title {
+            margin: 0 0 4px;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: #6b7280;
         }
-        .mscp-info-label {
-            color: #6c757d;
-        }
-        .mscp-settings-group {
-            margin-top: 16px;
-        }
-        .mscp-settings-title {
-            font-size: 13px;
-            color: #6c757d;
-            margin-bottom: 8px;
-            font-weight: 500;
-        }
-        .mscp-setting-item {
+
+        /* Строка настройки: название и пояснение слева, тумблер или кнопка справа */
+        .mscp-row {
             display: flex;
             align-items: center;
-            padding: 4px 0;
-        }
-        .mscp-checkbox {
-            width: 16px;
-            height: 16px;
-            margin-right: 8px;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 10px 0;
+            border-bottom: 1px solid #f0f1f4;
             cursor: pointer;
-            accent-color: #496be8;
         }
-        .mscp-radio {
-            width: 16px;
-            height: 16px;
-            margin-right: 8px;
-            cursor: pointer;
-            accent-color: #496be8;
+        .mscp-row:last-child {
+            border-bottom: none;
         }
-        .mscp-style-item {
-            display: block;
+        .mscp-row-static {
+            cursor: default;
         }
-        .mscp-style-description {
-            margin: 1px 0 0 24px;
+        .mscp-row-text {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 0;
+        }
+        .mscp-row-title {
+            font-size: 14px;
+            color: #1f2937;
+        }
+        .mscp-row-desc {
             font-size: 12px;
             line-height: 1.35;
-            color: #6c757d;
+            color: #6b7280;
         }
-        .mscp-look {
-            margin: 8px 0 0 24px;
-            padding: 8px 12px;
-            border: 1px solid #e9ecef;
+
+        .mscp-switch {
+            position: relative;
+            flex: none;
+            width: 38px;
+            height: 22px;
+        }
+        .mscp-switch input {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            opacity: 0;
+            cursor: pointer;
+            z-index: 1;
+        }
+        .mscp-switch-track {
+            position: absolute;
+            inset: 0;
+            border-radius: 11px;
+            background-color: #cbd0d9;
+            transition: background-color 0.2s ease;
+        }
+        .mscp-switch-track::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background-color: white;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+            transition: transform 0.2s ease;
+        }
+        .mscp-switch input:checked + .mscp-switch-track {
+            background-color: #496be8;
+        }
+        .mscp-switch input:checked + .mscp-switch-track::after {
+            transform: translateX(16px);
+        }
+        .mscp-switch input:focus-visible + .mscp-switch-track {
+            outline: 2px solid #9db0f5;
+            outline-offset: 2px;
+        }
+
+        /* Сведения о журнале */
+        .mscp-stats {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 22px;
+        }
+        .mscp-stat {
+            flex: 1;
+            padding: 10px 12px;
+            background-color: #f8f9fb;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+        }
+        .mscp-stat b {
+            display: block;
+            font-size: 18px;
+            font-weight: 600;
+            color: #111827;
+        }
+        .mscp-stat span {
+            font-size: 12px;
+            color: #6b7280;
+        }
+
+        .mscp-btn-action {
+            flex: none;
+            padding: 7px 16px;
+            background-color: white;
+            color: #374151;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            cursor: pointer;
+            font: inherit;
+            font-size: 13px;
+            font-weight: 500;
+            transition: background-color 0.2s ease;
+        }
+        .mscp-btn-action:hover:not(:disabled) {
+            background-color: #f3f4f6;
+        }
+        .mscp-btn-action:disabled {
+            color: #9ca3af;
+            cursor: default;
+        }
+
+        /* Карточки выбора вида расписания */
+        .mscp-options {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-top: 8px;
+        }
+        .mscp-option {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            padding: 10px;
+            border: 2px solid #e5e7eb;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: border-color 0.2s ease, background-color 0.2s ease;
+        }
+        .mscp-option:hover {
+            border-color: #c7d0f5;
+        }
+        .mscp-option:has(input:checked) {
+            border-color: #496be8;
+            background-color: #f5f7ff;
+        }
+        .mscp-option input {
+            position: absolute;
+            opacity: 0;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            cursor: pointer;
+        }
+        .mscp-thumb {
+            width: 100%;
+            height: auto;
+            margin-bottom: 4px;
+            background-color: #f3f4f6;
             border-radius: 8px;
         }
-        .mscp-look-off {
-            opacity: 0.45;
+        .mscp-option-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #111827;
         }
-        .mscp-look-title {
-            font-size: 12px;
-            color: #6c757d;
-            margin-bottom: 4px;
+
+        /* Параметры заменённого расписания */
+        .mscp-subpanel {
+            margin-top: 16px;
+            padding: 2px 16px 10px;
+            background-color: #f8f9fb;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
         }
-        .mscp-look-row {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 2px 14px;
-            padding: 2px 0;
+        .mscp-subpanel[hidden] {
+            display: none;
         }
-        .mscp-look-note {
-            margin: 2px 0 4px;
+        .mscp-subpanel .mscp-row {
+            border-bottom-color: #e9ebf0;
         }
-        .mscp-label {
-            display: flex;
-            align-items: center;
-            cursor: pointer;
+        .mscp-hint {
+            padding-top: 8px;
+        }
+
+        /* Переключатель из нескольких кнопок */
+        .mscp-seg {
+            flex: none;
+            display: inline-flex;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            overflow: hidden;
+            background-color: white;
+        }
+        .mscp-seg label {
+            position: relative;
+            padding: 6px 12px;
             font-size: 13px;
-            color: #333;
-        }
-        .mscp-action-buttons {
-            margin-top: 12px;
-            display: flex;
-            gap: 8px;
-        }
-        .mscp-btn-action {
-            flex: 1;
-            padding: 8px 12px;
-            background-color: #f8f9fa;
-            color: #495057;
-            border: 1px solid #dee2e6;
-            border-radius: 6px;
+            color: #374151;
             cursor: pointer;
-            font-size: 12px;
-            font-weight: 500;
-            transition: all 0.2s ease;
-            text-align: center;
+            white-space: nowrap;
         }
-        .mscp-btn-action:hover {
-            background-color: #e9ecef;
-            border-color: #adb5bd;
+        .mscp-seg label + label {
+            border-left: 1px solid #d1d5db;
         }
-        .mscp-buttons-section {
-            display: flex;
-            justify-content: flex-end;
-            gap: 12px;
-            padding-top: 16px;
-            border-top: 1px solid #e9ecef;
-        }
-        .mscp-btn-primary {
-            padding: 10px 24px;
+        .mscp-seg label:has(input:checked) {
             background-color: #496be8;
             color: white;
-            border: none;
-            border-radius: 6px;
+        }
+        .mscp-seg input {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            opacity: 0;
             cursor: pointer;
-            font-size: 14px;
-            font-weight: 500;
-            transition: all 0.2s ease;
         }
-        .mscp-btn-primary:hover {
-            background-color: #3a5bd0;
-            transform: translateY(-1px);
-        }
-        .mscp-btn-secondary {
-            padding: 10px 24px;
-            background-color: white;
-            color: #495057;
-            border: 1px solid #6c757d;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 500;
-            transition: all 0.2s ease;
-        }
-        .mscp-btn-secondary:hover {
-            background-color: #f8f9fa;
-            border-color: #495057;
+
+        @media (max-width: 600px) {
+            .mscp-modal-body {
+                flex-direction: column;
+            }
+            .mscp-modal-nav {
+                width: auto;
+                flex-direction: row;
+                border-right: none;
+                border-bottom: 1px solid #e5e7eb;
+            }
+            .mscp-options {
+                grid-template-columns: 1fr;
+            }
         }
     `;
     document.head.appendChild(styleEl);
@@ -2376,7 +2551,7 @@ const ScheduleLayout = {
     /** @type {HTMLElement|null} Колонка со шкалой времени (кэш) */
     axis: null,
 
-    /** @type {Array<{subject: string, color: string}>} Предметы недели с цветами для легенды в настройках */
+    /** @type {Array<{subject: string, color: string}>} Предметы недели с цветами для легенды (ScheduleLegend) */
     legend: [],
 
     /** @type {boolean} Идёт ли сейчас открытие журнала через меню сайта */
@@ -2855,8 +3030,11 @@ const ScheduleLayout = {
                 border-color: #9ca3af;
                 border-left-color: var(--mscp-c, #9ca3af);
             }
+            /* Рамка текущего урока внутри карточки: снаружи её закрывали бы соседние карточки (зазор между ними 2px) */
             body.mscp-schedule .mscp-card-now {
-                box-shadow: 0 0 0 2px #3b6cf0;
+                border-color: #3b6cf0;
+                border-left-color: var(--mscp-c, #3b6cf0);
+                box-shadow: inset 0 0 0 1px #3b6cf0;
             }
             body.mscp-schedule .mscp-card-head {
                 display: flex;
@@ -2949,7 +3127,23 @@ const ScheduleLayout = {
                 padding-right: 52px !important;
             }
 
-            /* Легенда в окне настроек */
+            /* Легенда по кнопке ⓘ в шапке расписания */
+            .mscp-legend-pop {
+                position: fixed;
+                z-index: 1001;
+                max-width: 360px;
+                padding: 12px 14px;
+                background: white;
+                border-radius: 10px;
+                box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+                font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+            }
+            .mscp-legend-title {
+                margin-bottom: 8px;
+                font-size: 13px;
+                font-weight: 600;
+                color: #111827;
+            }
             .mscp-legend {
                 display: flex;
                 flex-wrap: wrap;
@@ -2991,12 +3185,1159 @@ const ScheduleLayout = {
 
 
 // ============================================================
+// РАСПИСАНИЕ КОЛЛЕГ: запросы к API сайта и кеш в localStorage
+// ============================================================
+
+/**
+ * Получает список учителей школы и недельное расписание любого учителя
+ * - Вход берётся у самого сайта: токен из cookie, год и школа из его localStorage, пароли не нужны
+ * - Всё полученное кладётся в localStorage (ключ CONFIG.COLLEAGUES.CACHE_KEY), чтобы не гонять лишние запросы:
+ *   список учителей живёт неделю, текущая и будущие недели — несколько часов, прошедшие недели не меняются
+ * - Если сайт не ответил, а в кеше есть устаревшие данные, отдаются они с пометкой stale
+ * - Закреплённые учителя и последний выбранный лежат отдельным ключом: сброс кеша их не трогает
+ */
+const ColleagueApi = {
+    /** @type {{teachers: ?{key: string, at: number, list: Array}, weeks: Object}|null} Кеш в памяти, зеркало localStorage */
+    store: null,
+
+    /**
+     * Читает значение cookie
+     * @param {string} name - имя cookie
+     * @returns {string} значение; пустая строка, если cookie нет
+     */
+    readCookie(name) {
+        const part = document.cookie.split('; ').find(item => item.startsWith(`${name}=`));
+        return part ? decodeURIComponent(part.slice(name.length + 1)) : '';
+    },
+
+    /**
+     * Читает JSON из localStorage сайта
+     * @param {string} key - ключ
+     * @returns {*} значение; null, если ключа нет или он не JSON
+     */
+    readSiteValue(key) {
+        try {
+            return JSON.parse(localStorage.getItem(key));
+        } catch (error) {
+            return null;
+        }
+    },
+
+    /**
+     * Данные текущего входа: токен, учебный год, школа и профиль учителя
+     * @returns {{token: string, year: number, school: number, profile: number}|null} null, если вход не определён
+     */
+    session() {
+        const info = this.readSiteValue('profileInfo');
+        const year = Number(this.readSiteValue('MES_API_YEAR_ID') ?? this.readSiteValue('currentAcademicYear')?.id);
+        const profile = Number(info?.id ?? this.readCookie('profile_id'));
+        const token = this.readCookie('aupd_token');
+
+        if (!token || !year || !info?.school_id || !profile) return null;
+        return { token, year, school: info.school_id, profile };
+    },
+
+    /**
+     * GET-запрос к API сайта
+     * @param {string} path - путь после /api/ej
+     * @param {Object} params - параметры запроса
+     * @returns {Promise<Array>} тело ответа
+     * @throws {Error} с полем status (0 — вход не определён, иначе код ответа сайта)
+     */
+    async get(path, params) {
+        const session = this.session();
+        if (!session) throw Object.assign(new Error('Не удалось определить вход'), { status: 0 });
+
+        const response = await fetch(`/api/ej${path}?${new URLSearchParams(params)}`, {
+            headers: {
+                'Auth-Token': session.token,
+                'Profile-Id': String(session.profile),
+                'x-mes-subsystem': 'teacherweb',
+                Accept: 'application/json'
+            }
+        });
+        if (!response.ok) throw Object.assign(new Error(`Сайт ответил ${response.status}`), { status: response.status });
+
+        return response.json();
+    },
+
+    /**
+     * Понятное сообщение об ошибке запроса
+     * @param {Error} error - ошибка из get()
+     * @returns {string}
+     */
+    describeError(error) {
+        if (error.status === 0) return 'Не удалось определить вход. Обновите страницу.';
+        if (error.status === 401) return 'Вход устарел. Обновите страницу или войдите заново.';
+        if (error.status === 403) return 'У вашей учётной записи нет доступа к расписанию этого учителя.';
+        return `Не удалось получить данные: ${error.message}`;
+    },
+
+    // ---------- даты ----------
+
+    /**
+     * Дата в виде ГГГГ-ММ-ДД по местному времени (toISOString сдвигает день по UTC)
+     * @param {Date} date
+     * @returns {string}
+     */
+    isoDate(date) {
+        const pad = value => String(value).padStart(2, '0');
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+    },
+
+    /**
+     * Прибавляет дни, время обнуляется
+     * @param {Date} date
+     * @param {number} days
+     * @returns {Date}
+     */
+    addDays(date, days) {
+        return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+    },
+
+    /**
+     * Понедельник недели, в которую входит дата
+     * @param {Date} date
+     * @returns {Date}
+     */
+    weekStart(date) {
+        return this.addDays(date, -((date.getDay() + 6) % 7));
+    },
+
+    // ---------- кеш ----------
+
+    /**
+     * Кеш из памяти; при первом обращении читается из localStorage
+     * @returns {{teachers: ?Object, weeks: Object}}
+     */
+    load() {
+        if (this.store) return this.store;
+
+        let saved = null;
+        try {
+            saved = JSON.parse(localStorage.getItem(CONFIG.COLLEAGUES.CACHE_KEY));
+        } catch (error) {
+            console.error('Ошибка чтения кеша расписаний:', error);
+        }
+
+        this.store = { teachers: saved?.teachers ?? null, weeks: saved?.weeks ?? {} };
+        return this.store;
+    },
+
+    /**
+     * Сохраняет кеш; лишние старые недели удаляются, при нехватке места убирается половина недель
+     * @returns {void}
+     */
+    save() {
+        const weeks = this.store.weeks;
+        const keys = Object.keys(weeks).sort((a, b) => weeks[a].at - weeks[b].at);
+        keys.slice(0, Math.max(0, keys.length - CONFIG.COLLEAGUES.MAX_WEEKS)).forEach(key => delete weeks[key]);
+
+        for (let attempt = 0; attempt < 2; attempt++) {
+            try {
+                localStorage.setItem(CONFIG.COLLEAGUES.CACHE_KEY, JSON.stringify(this.store));
+                return;
+            } catch (error) {
+                const oldest = Object.keys(weeks).sort((a, b) => weeks[a].at - weeks[b].at);
+                oldest.slice(0, Math.ceil(oldest.length / 2)).forEach(key => delete weeks[key]);
+            }
+        }
+    },
+
+    /**
+     * Полностью очищает кеш расписаний (закреплённые учителя остаются)
+     * @returns {void}
+     */
+    clear() {
+        this.store = { teachers: null, weeks: {} };
+        try {
+            localStorage.removeItem(CONFIG.COLLEAGUES.CACHE_KEY);
+        } catch (error) {
+            console.error('Ошибка очистки кеша расписаний:', error);
+        }
+    },
+
+    /**
+     * Закреплённые учителя и последний выбранный
+     * @returns {{ids: number[], last: ?number}}
+     */
+    loadFavorites() {
+        try {
+            const saved = JSON.parse(localStorage.getItem(CONFIG.COLLEAGUES.FAVORITES_KEY));
+            return { ids: saved?.ids ?? [], last: saved?.last ?? null };
+        } catch (error) {
+            return { ids: [], last: null };
+        }
+    },
+
+    /**
+     * @param {{ids: number[], last: ?number}} favorites
+     * @returns {void}
+     */
+    saveFavorites(favorites) {
+        try {
+            localStorage.setItem(CONFIG.COLLEAGUES.FAVORITES_KEY, JSON.stringify(favorites));
+        } catch (error) {
+            console.error('Ошибка сохранения списка учителей:', error);
+        }
+    },
+
+    // ---------- данные ----------
+
+    /**
+     * Список учителей школы: кеш, если он свежий, иначе запрос (по 100 на страницу)
+     * @param {boolean} [force=false] - игнорировать кеш
+     * @returns {Promise<{list: Array<{id: number, name: string, subjects: string}>, at: number, stale: boolean}>}
+     */
+    async getTeachers(force = false) {
+        const { year, school } = this.session() ?? {};
+        const key = `${school}-${year}`;
+        const cached = this.load().teachers;
+        const usable = cached?.key === key ? cached : null;
+
+        if (usable && !force && Date.now() - usable.at < CONFIG.COLLEAGUES.TEACHERS_TTL_MS) {
+            return { list: usable.list, at: usable.at, stale: false };
+        }
+
+        try {
+            const profiles = [];
+            for (let page = 1; page <= 20; page++) {
+                const data = await this.get('/core/teacher/v1/teacher_profiles', {
+                    academic_year_id: year, school_id: school, per_page: 100, page
+                });
+                profiles.push(...data);
+                if (data.length < 100) break;
+            }
+
+            const list = profiles
+                .filter(profile => !profile.deleted && !profile.virtual)
+                .map(profile => ({
+                    id: profile.id,
+                    name: profile.name,
+                    subjects: (profile.subjects ?? []).map(subject => subject.name).slice(0, 3).join(', ')
+                }))
+                .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+
+            const store = this.load();
+            store.teachers = { key, at: Date.now(), list };
+            this.save();
+            return { list, at: store.teachers.at, stale: false };
+        } catch (error) {
+            if (usable) return { list: usable.list, at: usable.at, stale: true };
+            throw error;
+        }
+    },
+
+    /**
+     * Уроки учителя за неделю по дням и номерам уроков школьного звонка
+     * Отменённые уроки и уроки, перенесённые на другую дату, не берутся: сайт отдаёт их на старом месте
+     * @param {number} teacherId - id профиля учителя
+     * @param {Date} monday - понедельник нужной недели
+     * @param {boolean} [force=false] - игнорировать кеш
+     * @returns {Promise<{days: Object<string, Array<[number, string, string, string]>>, at: number, stale: boolean, fromCache: boolean}>}
+     *          days: {ГГГГ-ММ-ДД: [[номер урока, время начала, класс, предмет], ...]}
+     */
+    async getWeek(teacherId, monday, force = false) {
+        const from = this.isoDate(monday);
+        const to = this.isoDate(this.addDays(monday, 6));
+        const key = `${teacherId}|${from}`;
+        const cached = this.load().weeks[key];
+
+        // Прошедшая неделя не меняется, остальные устаревают
+        const isPast = to < this.isoDate(new Date());
+        const isFresh = cached && (isPast || Date.now() - cached.at < CONFIG.COLLEAGUES.WEEK_TTL_MS);
+        if (isFresh && !force) return { days: cached.days, at: cached.at, stale: false, fromCache: true };
+
+        try {
+            const items = [];
+            for (let page = 1; page <= 5; page++) {
+                const data = await this.get('/plan/teacher/v1/schedule_items', {
+                    academic_year_id: this.session()?.year, teacher_id: teacherId, from, to,
+                    with_group_class_subject_info: true, per_page: 300, page
+                });
+                items.push(...data);
+                if (data.length < 300) break;
+            }
+
+            const days = this.compactWeek(items);
+            this.load().weeks[key] = { at: Date.now(), days };
+            this.save();
+            return { days, at: this.load().weeks[key].at, stale: false, fromCache: false };
+        } catch (error) {
+            if (cached) return { days: cached.days, at: cached.at, stale: true, fromCache: true };
+            throw error;
+        }
+    },
+
+    /**
+     * Сворачивает ответ сайта в короткий вид для кеша
+     * Номер урока считается по времени начала: поле lesson_number в ответе не школьный номер
+     * @param {Array} items - записи schedule_items
+     * @returns {Object<string, Array<[number, string, string, string]>>}
+     */
+    compactWeek(items) {
+        const pad = value => String(value).padStart(2, '0');
+        const days = {};
+
+        items.forEach(item => {
+            if (item.cancelled || item.transferred_to_date) return;
+
+            const [year, month, day] = item.date;
+            const [hours, minutes] = item.time;
+            const iso = `${year}-${pad(month)}-${pad(day)}`;
+
+            (days[iso] ??= []).push([
+                lessonNumberFromStart(hours, minutes),
+                `${pad(hours)}:${pad(minutes)}`,
+                item.class_unit_name ?? '',
+                item.subject_name ?? ''
+            ]);
+        });
+
+        Object.values(days).forEach(lessons => lessons.sort((a, b) => a[1].localeCompare(b[1])));
+        return days;
+    }
+};
+
+
+// ============================================================
+// РАСПИСАНИЕ КОЛЛЕГ: окно с выбором учителя и сеткой недели
+// ============================================================
+
+/**
+ * Окно "Расписание коллег"
+ * - Слева список учителей школы с поиском и закреплением, справа сетка недели: дни и номера уроков школьного звонка
+ * - Занятое время показано карточкой (класс и предмет), свободное — зелёным
+ * - Режим "Свободны вместе со мной" дополнительно берёт ваше расписание и выделяет часы, свободные у обоих
+ * - Открывается на неделе, которая выбрана на странице расписания; дальше недели листаются в самом окне
+ * - Свободно = нет урока в расписании; внеурочка, дежурства и совещания в нём не учитываются
+ */
+const Colleagues = {
+    /** Дней в сетке: понедельник — суббота */
+    DAYS: ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'],
+
+    /** Месяцы в родительном падеже: так их пишет шапка расписания */
+    MONTHS: ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'],
+
+    /** @type {HTMLElement|null} Оверлей открытого окна */
+    overlay: null,
+
+    /** @type {Function|null} Обработчик Escape открытого окна */
+    onKeydown: null,
+
+    /** Что сейчас выбрано и загружено; пересоздаётся при каждом открытии */
+    state: null,
+
+    /** @type {number} Номер последней загрузки: ответ более ранней игнорируется */
+    loadId: 0,
+
+    /**
+     * Понедельник недели, открытой на странице расписания
+     * @returns {Date} при неудаче разбора — понедельник текущей недели
+     */
+    pageMonday() {
+        const text = document.querySelector(CONFIG.SELECTORS.SCHEDULE_WEEK_LABEL)?.textContent ?? '';
+        const match = /(\d{1,2})\s+([а-яё]+)\s+(\d{4})/iu.exec(text);
+        const month = match ? this.MONTHS.indexOf(match[2].toLowerCase()) : -1;
+
+        const date = month >= 0 ? new Date(Number(match[3]), month, Number(match[1])) : new Date();
+        return ColleagueApi.weekStart(date);
+    },
+
+    /**
+     * Открывает окно
+     * @returns {void}
+     */
+    open() {
+        if (this.overlay) return;
+
+        createStyles();
+        this.addStyles();
+
+        const favorites = ColleagueApi.loadFavorites();
+        this.state = {
+            teachers: [],
+            favorites,
+            teacherId: favorites.last,
+            monday: this.pageMonday(),
+            together: false,
+            filter: '',
+            week: null,
+            mine: null,
+            loading: true,
+            error: '',
+            note: ''
+        };
+
+        this.overlay = document.createElement('div');
+        this.overlay.className = 'mscp-modal-overlay';
+        this.overlay.innerHTML = `
+            <div class="mscp-col-window">
+                <div class="mscp-modal-header">
+                    <h2 class="mscp-modal-title">Расписание коллег</h2>
+                    <button class="mscp-close-btn">&times;</button>
+                </div>
+                <div class="mscp-col-body">
+                    <div class="mscp-col-side">
+                        <input type="search" class="mscp-col-search" placeholder="Поиск учителя">
+                        <div class="mscp-col-list"></div>
+                    </div>
+                    <div class="mscp-col-main">
+                        <div class="mscp-col-toolbar"></div>
+                        <div class="mscp-col-grid"></div>
+                    </div>
+                </div>
+                <div class="mscp-col-footer"></div>
+            </div>
+        `;
+
+        this.overlay.querySelector('.mscp-close-btn').addEventListener('click', () => this.close());
+        this.overlay.addEventListener('click', event => {
+            if (event.target === this.overlay) this.close();
+        });
+        this.overlay.querySelector('.mscp-col-search').addEventListener('input', event => {
+            this.state.filter = event.target.value;
+            this.renderList();
+        });
+
+        this.onKeydown = event => {
+            if (event.key === 'Escape') this.close();
+        };
+        document.addEventListener('keydown', this.onKeydown);
+
+        document.body.appendChild(this.overlay);
+        this.render();
+        this.init();
+    },
+
+    /**
+     * Закрывает окно
+     * @returns {void}
+     */
+    close() {
+        document.removeEventListener('keydown', this.onKeydown);
+        this.overlay?.remove();
+        this.overlay = null;
+        this.loadId++;
+    },
+
+    /**
+     * Загружает список учителей и, если учитель уже выбирался раньше, его неделю
+     * @returns {Promise<void>}
+     */
+    async init() {
+        try {
+            const teachers = await ColleagueApi.getTeachers();
+            if (!this.overlay) return;
+
+            this.state.teachers = teachers.list;
+            this.state.note = teachers.stale ? 'Список учителей взят из кеша: сайт не ответил.' : '';
+            if (!teachers.list.some(teacher => teacher.id === this.state.teacherId)) this.state.teacherId = null;
+        } catch (error) {
+            if (!this.overlay) return;
+            this.state.error = ColleagueApi.describeError(error);
+        }
+
+        this.state.loading = false;
+        this.render();
+        if (this.state.teacherId) this.loadWeek();
+    },
+
+    /**
+     * Загружает неделю выбранного учителя (и вашу, если включён режим "вместе со мной")
+     * @param {boolean} [force=false] - игнорировать кеш
+     * @returns {Promise<void>}
+     */
+    async loadWeek(force = false) {
+        const state = this.state;
+        const id = ++this.loadId;
+        const myId = ColleagueApi.session()?.profile;
+
+        state.loading = true;
+        state.error = '';
+        this.renderGrid();
+
+        try {
+            const needMine = state.together && myId && myId !== state.teacherId;
+            const [week, mine] = await Promise.all([
+                ColleagueApi.getWeek(state.teacherId, state.monday, force),
+                needMine ? ColleagueApi.getWeek(myId, state.monday, force) : null
+            ]);
+            if (id !== this.loadId) return;
+
+            state.week = week;
+            state.mine = mine;
+        } catch (error) {
+            if (id !== this.loadId) return;
+            state.week = null;
+            state.mine = null;
+            state.error = ColleagueApi.describeError(error);
+        }
+
+        state.loading = false;
+        this.render();
+    },
+
+    /**
+     * Выбирает учителя
+     * @param {number} teacherId
+     * @returns {void}
+     */
+    selectTeacher(teacherId) {
+        this.state.teacherId = teacherId;
+        this.state.favorites.last = teacherId;
+        ColleagueApi.saveFavorites(this.state.favorites);
+        this.renderList();
+        this.loadWeek();
+    },
+
+    /**
+     * Закрепляет учителя вверху списка или снимает закрепление
+     * @param {number} teacherId
+     * @returns {void}
+     */
+    toggleFavorite(teacherId) {
+        const ids = this.state.favorites.ids;
+        const index = ids.indexOf(teacherId);
+
+        if (index >= 0) ids.splice(index, 1);
+        else ids.push(teacherId);
+
+        ColleagueApi.saveFavorites(this.state.favorites);
+        this.renderList();
+    },
+
+    /**
+     * Сдвигает неделю
+     * @param {number} weeks - на сколько недель (отрицательное — назад)
+     * @returns {void}
+     */
+    shiftWeek(weeks) {
+        this.state.monday = ColleagueApi.addDays(this.state.monday, weeks * 7);
+        if (this.state.teacherId) this.loadWeek();
+        else this.renderToolbar();
+    },
+
+    // ---------- отрисовка ----------
+
+    /**
+     * Создаёт элемент
+     * @param {string} tag - тег
+     * @param {string} [className] - класс
+     * @param {string} [text] - текст
+     * @returns {HTMLElement}
+     */
+    el(tag, className = '', text = '') {
+        const element = document.createElement(tag);
+        if (className) element.className = className;
+        if (text) element.textContent = text;
+        return element;
+    },
+
+    /**
+     * Перерисовывает всё окно
+     * @returns {void}
+     */
+    render() {
+        if (!this.overlay) return;
+
+        this.renderList();
+        this.renderToolbar();
+        this.renderGrid();
+        this.renderFooter();
+    },
+
+    /**
+     * Список учителей: закреплённые сверху, фильтр по поиску
+     * @returns {void}
+     */
+    renderList() {
+        const list = this.overlay?.querySelector('.mscp-col-list');
+        if (!list) return;
+
+        const { teachers, favorites, teacherId, filter } = this.state;
+        const normalize = text => text.toLowerCase().replace(/ё/g, 'е');
+        const query = normalize(filter.trim());
+        const pinned = id => favorites.ids.includes(id);
+
+        const shown = teachers
+            .filter(teacher => !query || normalize(`${teacher.name} ${teacher.subjects}`).includes(query))
+            .sort((a, b) => Number(pinned(b.id)) - Number(pinned(a.id)));
+
+        list.replaceChildren(...shown.map(teacher => {
+            const row = this.el('div', `mscp-col-item${teacher.id === teacherId ? ' mscp-col-active' : ''}`);
+            const star = this.el('button', `mscp-col-star${pinned(teacher.id) ? ' mscp-col-pinned' : ''}`, '★');
+            star.title = pinned(teacher.id) ? 'Убрать из закреплённых' : 'Закрепить вверху списка';
+            star.addEventListener('click', event => {
+                event.stopPropagation();
+                this.toggleFavorite(teacher.id);
+            });
+
+            const text = this.el('div', 'mscp-col-name');
+            text.append(this.el('div', '', teacher.name), this.el('div', 'mscp-col-subjects', teacher.subjects));
+            row.append(text, star);
+            row.addEventListener('click', () => this.selectTeacher(teacher.id));
+            return row;
+        }));
+
+        if (!shown.length && !this.state.loading) {
+            list.append(this.el('div', 'mscp-col-empty', teachers.length ? 'Никого не нашлось' : 'Список пуст'));
+        }
+    },
+
+    /**
+     * Панель над сеткой: неделя, переключатель недель, режим "вместе со мной", обновление
+     * @returns {void}
+     */
+    renderToolbar() {
+        const toolbar = this.overlay?.querySelector('.mscp-col-toolbar');
+        if (!toolbar) return;
+
+        const { monday, teacherId, together } = this.state;
+        const sunday = ColleagueApi.addDays(monday, 6);
+        const format = date => date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+
+        const prev = this.el('button', 'mscp-btn-action mscp-col-week', '‹');
+        const next = this.el('button', 'mscp-btn-action mscp-col-week', '›');
+        prev.title = 'Предыдущая неделя';
+        next.title = 'Следующая неделя';
+        prev.addEventListener('click', () => this.shiftWeek(-1));
+        next.addEventListener('click', () => this.shiftWeek(1));
+
+        const label = this.el('div', 'mscp-col-period', `${format(monday)} – ${format(sunday)}.${sunday.getFullYear()}`);
+
+        const teacher = this.state.teachers.find(item => item.id === teacherId);
+        const who = this.el('div', 'mscp-col-who', teacher?.name ?? 'Выберите учителя в списке');
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'mscp-checkbox';
+        checkbox.checked = together;
+        checkbox.addEventListener('change', () => {
+            this.state.together = checkbox.checked;
+            if (teacherId) this.loadWeek();
+        });
+        const togetherLabel = this.el('label', 'mscp-label');
+        togetherLabel.append(checkbox, 'Свободны вместе со мной');
+
+        const refresh = this.el('button', 'mscp-btn-action mscp-col-refresh', 'Обновить');
+        refresh.title = 'Запросить неделю у сайта, не глядя в кеш';
+        refresh.disabled = !teacherId;
+        refresh.addEventListener('click', () => this.loadWeek(true));
+
+        toolbar.replaceChildren(who, prev, label, next, togetherLabel, refresh);
+    },
+
+    /**
+     * Сетка недели
+     * @returns {void}
+     */
+    renderGrid() {
+        const grid = this.overlay?.querySelector('.mscp-col-grid');
+        if (!grid) return;
+
+        const { teacherId, loading, error, week, mine, monday } = this.state;
+
+        if (error) return grid.replaceChildren(this.el('div', 'mscp-col-message mscp-col-error', error));
+        if (loading) return grid.replaceChildren(this.el('div', 'mscp-col-message', 'Загрузка…'));
+        if (!teacherId || !week) return grid.replaceChildren(this.el('div', 'mscp-col-message', 'Выберите учителя в списке слева.'));
+
+        const dates = this.DAYS.map((_, index) => ColleagueApi.addDays(monday, index));
+        const today = ColleagueApi.isoDate(new Date());
+
+        // Строк не меньше, чем номеров в школьном звонке; больше — если у кого-то есть поздние уроки
+        let rows = CONFIG.LESSON_STARTS.length;
+        [week, mine].forEach(source => Object.values(source?.days ?? {}).forEach(lessons => {
+            lessons.forEach(lesson => { rows = Math.max(rows, lesson[0]); });
+        }));
+
+        const table = this.el('table', 'mscp-col-table');
+        const head = table.createTHead().insertRow();
+        head.insertCell().className = 'mscp-col-corner';
+        dates.forEach((date, index) => {
+            const cell = head.insertCell();
+            cell.className = `mscp-col-day${ColleagueApi.isoDate(date) === today ? ' mscp-col-today' : ''}`;
+            cell.textContent = `${this.DAYS[index]} ${String(date.getDate()).padStart(2, '0')}.${String(date.getMonth() + 1).padStart(2, '0')}`;
+        });
+
+        const body = table.createTBody();
+        for (let number = 1; number <= rows; number++) {
+            const row = body.insertRow();
+            const label = row.insertCell();
+            label.className = 'mscp-col-number';
+            label.append(this.el('b', '', String(number)), this.el('span', '', CONFIG.LESSON_STARTS[number - 1] ?? ''));
+
+            dates.forEach(date => {
+                const iso = ColleagueApi.isoDate(date);
+                const theirs = (week.days[iso] ?? []).filter(lesson => lesson[0] === number);
+                const mineHere = (mine?.days[iso] ?? []).filter(lesson => lesson[0] === number);
+                row.append(this.renderCell(theirs, mineHere, Boolean(mine)));
+            });
+        }
+
+        grid.replaceChildren(table);
+    },
+
+    /**
+     * Ячейка сетки
+     * @param {Array} theirs - уроки выбранного учителя в этот час
+     * @param {Array} mineHere - ваши уроки в этот час
+     * @param {boolean} together - включён ли режим "вместе со мной"
+     * @returns {HTMLElement}
+     */
+    renderCell(theirs, mineHere, together) {
+        const cell = this.el('td');
+
+        if (theirs.length) {
+            cell.className = 'mscp-col-busy';
+            theirs.forEach(([, , className, subject]) => {
+                const card = this.el('div', 'mscp-col-lesson');
+                const chip = this.el('span', 'mscp-col-class', className);
+                chip.style.background = classColor(className) || '#868e96';
+                card.append(chip, this.el('span', 'mscp-col-subject', subject));
+                card.style.borderLeftColor = this.subjectColor(subject);
+                card.title = `${className} ${subject}`;
+                cell.append(card);
+            });
+        } else if (together && mineHere.length) {
+            cell.className = 'mscp-col-mine';
+            cell.textContent = `у вас: ${mineHere.map(lesson => lesson[2]).join(', ')}`;
+        } else {
+            cell.className = together ? 'mscp-col-both' : 'mscp-col-free';
+            cell.textContent = together ? '✓' : '';
+        }
+
+        return cell;
+    },
+
+    /**
+     * Цвет предмета для полоски на карточке: один предмет — один цвет
+     * @param {string} subject - название предмета
+     * @returns {string}
+     */
+    subjectColor(subject) {
+        let hash = 0;
+        for (const char of subject) hash = (hash * 31 + char.codePointAt(0)) >>> 0;
+        return SCHEDULE_SUBJECT_COLORS[hash % SCHEDULE_SUBJECT_COLORS.length];
+    },
+
+    /**
+     * Нижняя строка: откуда данные, подсказка и сброс кеша
+     * @returns {void}
+     */
+    renderFooter() {
+        const footer = this.overlay?.querySelector('.mscp-col-footer');
+        if (!footer) return;
+
+        const { week, note, together } = this.state;
+        const parts = [];
+
+        if (week) {
+            const time = new Date(week.at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+            parts.push(week.stale ? `Сайт не ответил, показаны данные из кеша от ${time}.`
+                : week.fromCache ? `Из кеша, обновлено ${time}.` : `Загружено с сайта ${time}.`);
+        }
+        if (note) parts.push(note);
+        parts.push(together
+            ? '✓ — свободны оба. Свободно значит «нет урока в расписании».'
+            : 'Зелёное — нет урока в расписании: внеурочка и дежурства не учитываются.');
+
+        const clear = this.el('button', 'mscp-btn-action mscp-col-clear', 'Сбросить кеш');
+        clear.title = 'Удалить сохранённые списки и расписания. Закреплённые учителя останутся.';
+        clear.addEventListener('click', () => {
+            ColleagueApi.clear();
+            this.state.teachers = [];
+            this.state.week = null;
+            this.state.mine = null;
+            this.state.loading = true;
+            this.render();
+            this.init();
+        });
+
+        footer.replaceChildren(this.el('div', 'mscp-col-hint', parts.join(' ')), clear);
+    },
+
+    // ---------- стили ----------
+
+    /**
+     * Добавляет стили окна (один раз)
+     * @returns {void}
+     */
+    addStyles() {
+        if (document.getElementById('mscp-colleagues-styles')) return;
+
+        const style = document.createElement('style');
+        style.id = 'mscp-colleagues-styles';
+        style.textContent = `
+            .mscp-col-window {
+                display: flex;
+                flex-direction: column;
+                width: min(1100px, 96vw);
+                height: min(720px, 92vh);
+                background: white;
+                border-radius: 12px;
+                box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+                overflow: hidden;
+            }
+            .mscp-col-body {
+                flex: 1;
+                display: flex;
+                min-height: 0;
+            }
+            .mscp-col-side {
+                width: 260px;
+                flex: none;
+                display: flex;
+                flex-direction: column;
+                border-right: 1px solid #e9ecef;
+                background: #f8f9fa;
+            }
+            .mscp-col-search {
+                margin: 12px;
+                padding: 8px 10px;
+                border: 1px solid #ced4da;
+                border-radius: 6px;
+                font-size: 13px;
+            }
+            .mscp-col-list {
+                flex: 1;
+                overflow-y: auto;
+                padding: 0 6px 12px;
+            }
+            .mscp-col-item {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                padding: 6px 8px;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 13px;
+                color: #333;
+            }
+            .mscp-col-item:hover {
+                background: #e9ecef;
+            }
+            .mscp-col-active, .mscp-col-active:hover {
+                background: #dbe4ff;
+            }
+            .mscp-col-name {
+                flex: 1;
+                min-width: 0;
+            }
+            .mscp-col-subjects {
+                font-size: 11px;
+                color: #868e96;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .mscp-col-star {
+                border: none;
+                background: none;
+                cursor: pointer;
+                font-size: 16px;
+                color: #ced4da;
+                line-height: 1;
+            }
+            .mscp-col-star:hover { color: #f59f00; }
+            .mscp-col-pinned { color: #f59f00; }
+            .mscp-col-empty {
+                padding: 12px;
+                font-size: 13px;
+                color: #868e96;
+            }
+            .mscp-col-main {
+                flex: 1;
+                min-width: 0;
+                display: flex;
+                flex-direction: column;
+            }
+            .mscp-col-toolbar {
+                display: flex;
+                align-items: center;
+                flex-wrap: wrap;
+                gap: 10px;
+                padding: 10px 14px;
+                border-bottom: 1px solid #e9ecef;
+            }
+            .mscp-col-who {
+                flex: 1 1 100%;
+                font-size: 15px;
+                font-weight: 600;
+                color: #333;
+            }
+            .mscp-col-week {
+                flex: none !important;
+                width: 32px;
+                padding: 4px 0 !important;
+                font-size: 16px !important;
+            }
+            .mscp-col-period {
+                font-size: 13px;
+                color: #495057;
+                min-width: 120px;
+                text-align: center;
+            }
+            .mscp-col-refresh, .mscp-col-clear {
+                flex: none !important;
+                padding: 6px 12px !important;
+            }
+            .mscp-col-refresh:disabled { opacity: 0.5; cursor: default; }
+            .mscp-col-grid {
+                flex: 1;
+                overflow: auto;
+                padding: 10px 14px;
+            }
+            .mscp-col-message {
+                padding: 40px 0;
+                text-align: center;
+                color: #868e96;
+                font-size: 14px;
+            }
+            .mscp-col-error { color: #c92a2a; }
+            .mscp-col-table {
+                width: 100%;
+                table-layout: fixed;
+                border-collapse: separate;
+                border-spacing: 4px;
+                font-size: 12px;
+            }
+            .mscp-col-table td, .mscp-col-table th {
+                padding: 0;
+                vertical-align: middle;
+            }
+            .mscp-col-corner, .mscp-col-number { width: 56px; }
+            .mscp-col-day {
+                padding: 4px 0 !important;
+                text-align: center;
+                font-weight: 600;
+                color: #495057;
+            }
+            .mscp-col-today { color: #496be8; }
+            .mscp-col-number {
+                text-align: center;
+                color: #868e96;
+            }
+            .mscp-col-number b {
+                display: block;
+                font-size: 14px;
+                color: #495057;
+            }
+            .mscp-col-table tbody td {
+                height: 50px;
+                border-radius: 6px;
+                text-align: center;
+            }
+            .mscp-col-free { background: #e6f6ea; }
+            .mscp-col-both { background: #8fd3a3; color: #1b5e30; font-size: 16px; font-weight: 700; }
+            .mscp-col-mine { background: #f1f3f5; color: #868e96; font-size: 11px; }
+            .mscp-col-busy {
+                background: white;
+                border: 1px solid #dee2e6;
+                text-align: left !important;
+            }
+            .mscp-col-lesson {
+                display: flex;
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 2px;
+                padding: 3px 6px;
+                border-left: 4px solid #496be8;
+                color: #333;
+            }
+            .mscp-col-class {
+                flex: none;
+                padding: 1px 5px;
+                border-radius: 4px;
+                color: white;
+                font-weight: 600;
+            }
+            .mscp-col-subject {
+                max-width: 100%;
+                font-size: 11px;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+            .mscp-col-footer {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                padding: 10px 16px;
+                border-top: 1px solid #e9ecef;
+                background: #f8f9fa;
+            }
+            .mscp-col-hint {
+                flex: 1;
+                font-size: 12px;
+                color: #6c757d;
+                line-height: 1.4;
+            }
+            @media (max-width: 760px) {
+                .mscp-col-body { flex-direction: column; }
+                .mscp-col-side { width: auto; max-height: 30%; border-right: none; border-bottom: 1px solid #e9ecef; }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+};
+
+
+// ============================================================
+// ЛЕГЕНДА РАСПИСАНИЯ
+// ============================================================
+
+/**
+ * Кнопка ⓘ рядом с настройками на странице расписания и всплывающая легенда заменённого расписания:
+ * цвета предметов и значение значков урока и домашнего задания
+ * Кнопка видна, только пока включено заменённое расписание
+ */
+const ScheduleLegend = {
+    /** @type {HTMLElement|null} Открытая легенда */
+    popup: null,
+
+    /**
+     * Создаёт кнопку легенды
+     * @returns {HTMLElement} контейнер с кнопкой
+     */
+    createButton() {
+        const box = document.createElement('div');
+        box.className = 'mscp-legend-box';
+        box.style.cssText = 'box-shadow: 1px 1px 4px 0px rgba(0, 0, 0, 0.07); border-radius: 8px; display: inline-flex; margin-left: 8px;';
+
+        const button = document.createElement('button');
+        button.className = 'mscp-button';
+        button.innerHTML = createInfoIcon();
+        button.title = 'Обозначения в расписании';
+        button.addEventListener('click', event => {
+            event.stopPropagation();
+            this.toggle(box);
+        });
+        box.appendChild(button);
+
+        this.sync(box);
+        return box;
+    },
+
+    /**
+     * Показывает кнопку только при заменённом расписании; при другом виде закрывает легенду
+     * @param {HTMLElement} [box] - контейнер кнопки; по умолчанию найденный на странице
+     * @returns {void}
+     */
+    sync(box = document.querySelector('.mscp-legend-box')) {
+        if (!box) return;
+
+        const isCustom = loadSettings().scheduleStyle === 'custom';
+        box.style.display = isCustom ? 'inline-flex' : 'none';
+        if (!isCustom) this.close();
+    },
+
+    /**
+     * Убирает кнопку и легенду
+     * @returns {void}
+     */
+    stop() {
+        this.close();
+        document.querySelector('.mscp-legend-box')?.remove();
+    },
+
+    /**
+     * Открывает легенду под кнопкой или закрывает, если она уже открыта
+     * @param {HTMLElement} anchor - контейнер кнопки, под которым появляется легенда
+     * @returns {void}
+     */
+    toggle(anchor) {
+        if (this.popup) {
+            this.close();
+            return;
+        }
+
+        const popup = document.createElement('div');
+        popup.className = 'mscp-legend-pop';
+        popup.append(this.build());
+
+        const rect = anchor.getBoundingClientRect();
+        popup.style.top = `${Math.round(rect.bottom + 8)}px`;
+        popup.style.left = `${Math.max(8, Math.min(Math.round(rect.left), window.innerWidth - 376))}px`;
+
+        document.body.appendChild(popup);
+        this.popup = popup;
+
+        // Закрытие по клику вне легенды и по Escape; обработчики снимаются вместе с легендой
+        setTimeout(() => {
+            document.addEventListener('click', this.onOutside);
+            document.addEventListener('keydown', this.onKey);
+        });
+    },
+
+    /**
+     * Закрывает легенду
+     * @returns {void}
+     */
+    close() {
+        this.popup?.remove();
+        this.popup = null;
+        document.removeEventListener('click', this.onOutside);
+        document.removeEventListener('keydown', this.onKey);
+    },
+
+    /** Клик вне легенды закрывает её */
+    onOutside: event => {
+        if (!ScheduleLegend.popup?.contains(event.target)) ScheduleLegend.close();
+    },
+
+    /** Escape закрывает легенду */
+    onKey: event => {
+        if (event.key === 'Escape') ScheduleLegend.close();
+    },
+
+    /**
+     * Строит содержимое легенды: цвета предметов недели и значение значков
+     * @returns {DocumentFragment} содержимое легенды
+     */
+    build() {
+        const fragment = document.createDocumentFragment();
+
+        const title = document.createElement('div');
+        title.className = 'mscp-legend-title';
+        title.textContent = 'Обозначения в расписании';
+
+        const legend = document.createElement('div');
+        legend.className = 'mscp-legend';
+
+        for (const { subject, color } of ScheduleLayout.legend) {
+            const item = document.createElement('span');
+            item.className = 'mscp-legend-item';
+            const swatch = document.createElement('i');
+            swatch.style.background = color;
+            item.append(swatch, subject);
+            legend.append(item);
+        }
+
+        const key = document.createElement('span');
+        key.className = 'mscp-legend-key';
+        key.append('У — урок, ДЗ — домашнее задание:');
+        for (const [status, text] of [['done', 'заполнено'], ['late', 'не заполнено'], ['wait', 'ещё нет']]) {
+            const badge = document.createElement('span');
+            badge.className = `mscp-badge mscp-badge-${status}`;
+            badge.textContent = text;
+            key.append(badge);
+        }
+        legend.append(key);
+
+        fragment.append(title, legend);
+        return fragment;
+    }
+};
+
+
+// ============================================================
 // СТРАНИЦА РАСПИСАНИЯ
 // ============================================================
 
 /**
  * Управляет страницей "Расписание уроков"
- * - Ставит кнопку настроек справа от переключателя недель
+ * - Ставит кнопки расписания коллег и настроек справа от переключателя недель
  * - Включает вид расписания, выбранный в настройках: классический (без изменений),
  *   компактный (ScheduleCompact) или заменённый (ScheduleLayout)
  */
@@ -3031,6 +4372,9 @@ const SchedulePage = {
         ScheduleLayout.stop();
         ScheduleCompact.stop();
         document.querySelector('.mscp-button-box')?.remove();
+        document.querySelector('.mscp-colleagues-box')?.remove();
+        Colleagues.close();
+        ScheduleLegend.stop();
     },
 
     /**
@@ -3050,6 +4394,8 @@ const SchedulePage = {
             ScheduleCompact.stop();
             ScheduleLayout.start();
         }
+
+        ScheduleLegend.sync();
     },
 
     /**
@@ -3067,9 +4413,11 @@ const SchedulePage = {
         }
         if (!weekSwitch?.parentElement) return;
 
+        const colleagues = createColleaguesButton();
+        colleagues.style.marginLeft = '8px';
         const button = createSettingsButton();
         button.style.marginLeft = '8px';
-        weekSwitch.append(button);
+        weekSwitch.append(colleagues, ScheduleLegend.createButton(), button);
     }
 };
 
@@ -3077,6 +4425,35 @@ const SchedulePage = {
 // ============================================================
 // SVG ИКОНКИ
 // ============================================================
+
+/**
+ * Создаёт SVG-иконку расписания коллег (два человека)
+ * @returns {string} HTML-строка с SVG-элементом
+ */
+function createColleaguesIcon() {
+    return `
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#909090" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="9" cy="8" r="3.5"></circle>
+            <path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"></path>
+            <path d="M15.5 4.7a3.5 3.5 0 0 1 0 6.6"></path>
+            <path d="M18 14.3c2.2.7 3.5 2.6 3.5 5.7"></path>
+        </svg>
+    `;
+}
+
+/**
+ * Создаёт SVG-иконку легенды расписания (буква i в круге)
+ * @returns {string} HTML-строка с SVG-элементом
+ */
+function createInfoIcon() {
+    return `
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#909090" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="9.5"></circle>
+            <path d="M12 11v6"></path>
+            <circle cx="12" cy="7.5" r="0.6" fill="#909090"></circle>
+        </svg>
+    `;
+}
 
 /**
  * Создаёт SVG-иконку настроек (шестерёнка с кистью)
@@ -3138,6 +4515,25 @@ function createSettingsButton() {
 }
 
 /**
+ * Создаёт кнопку расписания коллег
+ * @returns {HTMLElement} контейнер с кнопкой
+ */
+function createColleaguesButton() {
+    const buttonContainer = document.createElement('div');
+    buttonContainer.className = 'mscp-colleagues-box';
+    buttonContainer.style.cssText = 'box-shadow: 1px 1px 4px 0px rgba(0, 0, 0, 0.07); border-radius: 8px; display: inline-flex;';
+
+    const button = document.createElement('button');
+    button.className = 'mscp-button';
+    button.innerHTML = createColleaguesIcon();
+    button.title = 'Расписание коллег';
+    button.addEventListener('click', () => Colleagues.open());
+    buttonContainer.appendChild(button);
+
+    return buttonContainer;
+}
+
+/**
  * Вставляет кнопки управления в заголовок журнала
  * - Ожидает загрузки DOM-элементов
  * - Создаёт стили и кнопки
@@ -3177,8 +4573,40 @@ function insertButtons() {
 
 
 // ============================================================
-// ЭКСПОРТ ЖУРНАЛА
+// ЭКСПОРТ: журнал и токен входа
 // ============================================================
+
+/**
+ * Скачивает токен входа в формате token.json проекта школьного журнала:
+ * {"aupd_token": "...", "profile_id": "..."}
+ * Токен и профиль берутся из cookie, куда их кладёт сайт после входа
+ * @returns {{ok: boolean, daysLeft?: number}} ok — false, если cookie с токеном нет; daysLeft — сколько суток он ещё действует
+ */
+function downloadToken() {
+    const token = ColleagueApi.readCookie('aupd_token');
+    const profile = ColleagueApi.readCookie('profile_id');
+    if (!token || !profile) return { ok: false };
+
+    const link = document.createElement('a');
+    const file = new Blob([JSON.stringify({ aupd_token: token, profile_id: profile }, null, 2)], { type: 'application/json' });
+
+    link.href = URL.createObjectURL(file);
+    link.download = 'token.json';
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(link.href);
+
+    // Срок жизни — в самом токене (JWT, поле exp в секундах)
+    let daysLeft;
+    try {
+        const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+        daysLeft = (JSON.parse(atob(payload)).exp * 1000 - Date.now()) / 86400000;
+    } catch (error) {
+        console.error('Не удалось прочитать срок токена:', error);
+    }
+
+    return { ok: true, daysLeft };
+}
 
 /**
  * Скачивает таблицу журнала как HTML-файл
@@ -3199,374 +4627,447 @@ function downloadAsFile() {
 
 
 // ============================================================
-// МОДАЛЬНОЕ ОКНО: секции формы настроек
+// МОДАЛЬНОЕ ОКНО: вкладки и секции формы настроек
 // ============================================================
 
 /**
- * Создаёт секцию с информацией о журнале
- * @returns {HTMLElement} DOM-элемент с информацией
+ * Вкладки окна настроек. Вкладка показывается, если на этой странице есть что настраивать
+ * @type {Array<{id: string, label: string, isAvailable: function(): boolean, build: function(Object): HTMLElement}>}
  */
-function createInfoSection() {
-    const section = document.createElement('div');
-    section.className = 'mscp-info-block';
-
-    const roundingMethod = JournalState.isMathRound
-        ? 'математический (4,5)'
-        : 'лицейский (4,65)';
-    const gradesRequired = JournalState.isWeNeed3Grades ? '3' : '5';
-
-    // Сведения о журнале есть только на странице журнала
-    const journalInfo = isTargetUrl(window.location.href) ? `
-        <div><span class="mscp-info-label">Уроков в триместре:</span> ${JournalState.countLessons}</div>
-        <div><span class="mscp-info-label">Нужно оценок:</span> ${gradesRequired}</div>
-        <div><span class="mscp-info-label">Округление:</span> ${roundingMethod}</div>
-    ` : '';
-
-    section.innerHTML = `
-        <div><span class="mscp-info-label">Версия:</span> ${VERSION}</div>
-        ${journalInfo}
-    `;
-
-    return section;
-}
+const SETTINGS_TABS = [
+    {
+        id: 'journal',
+        label: 'Журнал',
+        isAvailable: () => isTargetUrl(window.location.href),
+        build: createJournalTab
+    },
+    {
+        id: 'schedule',
+        label: 'Расписание',
+        isAvailable: () => true,
+        build: createScheduleTab
+    },
+    {
+        id: 'access',
+        label: 'Токен',
+        isAvailable: () => true,
+        build: createAccessTab
+    }
+];
 
 /**
- * Создаёт секцию с настройками (чекбоксы и кнопки действий)
- * @param {Object} currentSettings - текущие настройки
- * @returns {HTMLElement} DOM-элемент с настройками
+ * Создаёт секцию вкладки: заголовок и строки настроек
+ * @param {string} title - заголовок секции
+ * @param {...HTMLElement} children - содержимое секции
+ * @returns {HTMLElement} DOM-элемент секции
  */
-function createSettingsSection(currentSettings) {
-    const section = document.createElement('div');
-    section.className = 'mscp-settings-group';
+function createSection(title, ...children) {
+    const section = document.createElement('section');
+    section.className = 'mscp-section';
 
-    // Настройки журнала нужны только на странице журнала
-    if (isTargetUrl(window.location.href)) {
-        appendJournalSettings(section, currentSettings);
+    if (title) {
+        const heading = document.createElement('h3');
+        heading.className = 'mscp-section-title';
+        heading.textContent = title;
+        section.appendChild(heading);
     }
 
-    section.appendChild(createScheduleStyleGroup(currentSettings));
-
+    section.append(...children);
     return section;
 }
 
 /**
- * Добавляет в секцию настройки журнала: чекбоксы окрашивания, дополнительные и кнопки действий
- * @param {HTMLElement} section - секция настроек
- * @param {Object} currentSettings - текущие настройки
- * @returns {void}
+ * Создаёт строку с переключателем: название, пояснение и тумблер справа
+ * @param {string} key - ключ настройки (data-key)
+ * @param {string} title - название настройки
+ * @param {string} description - пояснение мелким шрифтом (может быть пустым)
+ * @param {boolean} checked - включена ли настройка
+ * @returns {HTMLElement} DOM-элемент строки
  */
-function appendJournalSettings(section, currentSettings) {
-    // Секция "Цветной режим для:"
-    const colorTitle = document.createElement('div');
-    colorTitle.className = 'mscp-settings-title';
-    colorTitle.textContent = 'Цветной режим для:';
-    section.appendChild(colorTitle);
-
-    const colorSettings = [
-        { key: 'colorAccumulation', label: 'Накопляемость оценок', checked: currentSettings.colorAccumulation },
-        { key: 'colorLessonGrades', label: 'Оценки за уроки', checked: currentSettings.colorLessonGrades },
-        { key: 'colorAverageGrade', label: 'Средний балл', checked: currentSettings.colorAverageGrade },
-        { key: 'colorBorderlineGrades', label: 'Пограничные оценки', checked: currentSettings.colorBorderlineGrades }
-    ];
-
-    colorSettings.forEach(setting => {
-        const item = document.createElement('div');
-        item.className = 'mscp-setting-item';
-        item.innerHTML = `
-            <label class="mscp-label">
-                <input type="checkbox" class="mscp-checkbox" data-key="${setting.key}" ${setting.checked ? 'checked' : ''}>
-                <span>${setting.label}</span>
-            </label>
-        `;
-        section.appendChild(item);
-    });
-
-    // Секция "Дополнительно"
-    const extraTitle = document.createElement('div');
-    extraTitle.className = 'mscp-settings-title';
-    extraTitle.style.marginTop = '12px';
-    extraTitle.textContent = 'Дополнительно:';
-    section.appendChild(extraTitle);
-
-    const extraSettings = [
-        { key: 'hideAverageMark', label: 'Выключать средний балл', checked: currentSettings.hideAverageMark },
-        { key: 'hideBanner', label: 'Убрать баннер', checked: currentSettings.hideBanner }
-    ];
-
-    extraSettings.forEach(setting => {
-        const item = document.createElement('div');
-        item.className = 'mscp-setting-item';
-        item.innerHTML = `
-            <label class="mscp-label">
-                <input type="checkbox" class="mscp-checkbox" data-key="${setting.key}" ${setting.checked ? 'checked' : ''}>
-                <span>${setting.label}</span>
-            </label>
-        `;
-        section.appendChild(item);
-    });
-
-    // Кнопки действий
-    const actionButtons = document.createElement('div');
-    actionButtons.className = 'mscp-action-buttons';
-    actionButtons.innerHTML = `
-        <button class="mscp-btn-action" data-action="download">Скачать журнал</button>
-        <button class="mscp-btn-action" data-action="removeHeader">Удалить шапку</button>
+function createSwitchRow(key, title, description, checked) {
+    const row = document.createElement('label');
+    row.className = 'mscp-row';
+    row.innerHTML = `
+        <span class="mscp-row-text">
+            <span class="mscp-row-title">${title}</span>
+            ${description ? `<span class="mscp-row-desc">${description}</span>` : ''}
+        </span>
+        <span class="mscp-switch">
+            <input type="checkbox" class="mscp-checkbox" data-key="${key}" ${checked ? 'checked' : ''}>
+            <span class="mscp-switch-track"></span>
+        </span>
     `;
-    section.appendChild(actionButtons);
-
-    // Обработчики кнопок
-    actionButtons.querySelector('[data-action="download"]').addEventListener('click', () => {
-        downloadAsFile();
-    });
-    actionButtons.querySelector('[data-action="removeHeader"]').addEventListener('click', () => {
-        removeHeaderAndSetHeight();
-    });
+    return row;
 }
 
 /**
- * Создаёт группу переключателя вида расписания уроков (по одному описанию к каждому виду)
- * @param {Object} currentSettings - текущие настройки
- * @returns {HTMLElement} DOM-элемент с переключателем
+ * Создаёт строку с кнопкой действия: название, пояснение и кнопка справа
+ * @param {string} title - название действия
+ * @param {string} description - пояснение мелким шрифтом
+ * @param {string} buttonText - текст кнопки
+ * @param {function(HTMLButtonElement): void} onClick - обработчик нажатия, получает кнопку
+ * @returns {HTMLElement} DOM-элемент строки
  */
-function createScheduleStyleGroup(currentSettings) {
-    const group = document.createElement('div');
-    group.className = 'mscp-schedule-style';
-    group.dataset.key = 'scheduleStyle';
+function createActionRow(title, description, buttonText, onClick) {
+    const row = document.createElement('div');
+    row.className = 'mscp-row mscp-row-static';
+    row.innerHTML = `
+        <span class="mscp-row-text">
+            <span class="mscp-row-title">${title}</span>
+            <span class="mscp-row-desc">${description}</span>
+        </span>
+        <button type="button" class="mscp-btn-action">${buttonText}</button>
+    `;
 
-    const title = document.createElement('div');
-    title.className = 'mscp-settings-title';
-    title.style.marginTop = '12px';
-    title.textContent = 'Расписание уроков:';
-    group.appendChild(title);
+    const button = row.querySelector('button');
+    button.addEventListener('click', () => onClick(button));
+    return row;
+}
+
+/**
+ * Создаёт вкладку "Журнал": цветной режим, поведение страницы и действия с журналом
+ * @param {Object} currentSettings - текущие настройки
+ * @returns {HTMLElement} DOM-элемент вкладки
+ */
+function createJournalTab(currentSettings) {
+    const tab = document.createElement('div');
+
+    const colorRows = [
+        ['colorAccumulation', 'Накопляемость оценок', 'Полоса у имени ученика по числу оценок'],
+        ['colorLessonGrades', 'Оценки за уроки', 'Цвет ячейки по оценке'],
+        ['colorAverageGrade', 'Средний балл', 'Цвет среднего балла'],
+        ['colorBorderlineGrades', 'Пограничные оценки', 'Уголок у оценки, которой не хватает до границы']
+    ].map(([key, title, description]) => createSwitchRow(key, title, description, currentSettings[key]));
+
+    const pageRows = [
+        createSwitchRow('hideAverageMark', 'Выключать средний балл по теме', 'При каждой загрузке журнала', currentSettings.hideAverageMark),
+        createSwitchRow('hideBanner', 'Убрать баннер', 'Если снять галочку, баннер вернётся после перезагрузки страницы', currentSettings.hideBanner)
+    ];
+
+    const actionRows = [
+        createActionRow('Скачать журнал', 'Сохранить таблицу журнала в файл', 'Скачать', () => downloadAsFile()),
+        createActionRow('Убрать шапку сайта', 'Один раз, до перезагрузки страницы', 'Убрать', button => {
+            try {
+                removeHeaderAndSetHeight();
+                button.textContent = 'Убрана';
+            } catch (error) {
+                console.error('Не удалось убрать шапку:', error);
+                button.textContent = 'Не вышло';
+            }
+            button.disabled = true;
+        })
+    ];
+
+    tab.append(
+        createJournalInfo(),
+        createSection('Цветной режим', ...colorRows),
+        createSection('Страница', ...pageRows),
+        createSection('Действия', ...actionRows)
+    );
+    return tab;
+}
+
+/**
+ * Создаёт плитки со сведениями об открытом журнале
+ * @returns {HTMLElement} DOM-элемент со сведениями
+ */
+function createJournalInfo() {
+    const stats = document.createElement('div');
+    stats.className = 'mscp-stats';
+
+    const rounding = JournalState.isMathRound ? ['4,5', 'математическое'] : ['4,65', 'лицейское'];
+    const items = [
+        [JournalState.countLessons, 'уроков в триместре'],
+        [JournalState.isWeNeed3Grades ? '3' : '5', 'оценок нужно'],
+        [rounding[0], `округление ${rounding[1]}`]
+    ];
+
+    stats.innerHTML = items
+        .map(([value, label]) => `<div class="mscp-stat"><b>${value}</b><span>${label}</span></div>`)
+        .join('');
+    return stats;
+}
+
+/**
+ * Создаёт вкладку "Расписание": вид расписания и параметры заменённого вида
+ * @param {Object} currentSettings - текущие настройки
+ * @returns {HTMLElement} DOM-элемент вкладки
+ */
+function createScheduleTab(currentSettings) {
+    const tab = document.createElement('div');
+
+    const styleSection = createSection('Вид расписания', createScheduleStyleCards(currentSettings));
+    const look = createScheduleLookOptions(currentSettings);
+    styleSection.appendChild(look);
+
+    // Параметры вида нужны только заменённому расписанию
+    const syncLook = () => {
+        const isCustom = tab.querySelector('input[name="mscp-schedule-style"]:checked')?.value === 'custom';
+        look.hidden = !isCustom;
+    };
+    tab.addEventListener('change', syncLook);
+    tab.appendChild(styleSection);
+    syncLook();
+
+    return tab;
+}
+
+/**
+ * Создаёт вкладку "Токен": токен входа для проекта школьного журнала
+ * @returns {HTMLElement} DOM-элемент вкладки
+ */
+function createAccessTab() {
+    const tab = document.createElement('div');
+
+    const row = createActionRow(
+        'Токен входа (token.json)',
+        'Файл для проекта школьного журнала. Токен даёт доступ к вашей учётной записи: никому его не передавайте и не выкладывайте. '
+            + 'Действует около 10 суток, потом нужно скачать новый',
+        'Скачать',
+        button => {
+            const result = downloadToken();
+            if (!result.ok) {
+                button.textContent = 'Нет токена';
+            } else if (result.daysLeft === undefined) {
+                button.textContent = 'Скачан';
+            } else {
+                button.textContent = `Скачан, ещё ${Math.max(0, Math.floor(result.daysLeft))} сут`;
+            }
+            setTimeout(() => { button.textContent = 'Скачать'; }, 4000);
+        }
+    );
+
+    tab.appendChild(createSection('Проект «Школьный журнал»', row));
+    return tab;
+}
+
+/**
+ * Создаёт ряд карточек выбора вида расписания: эскиз, название и короткое пояснение
+ * @param {Object} currentSettings - текущие настройки
+ * @returns {HTMLElement} DOM-элемент с карточками
+ */
+function createScheduleStyleCards(currentSettings) {
+    const cards = document.createElement('div');
+    cards.className = 'mscp-options';
 
     const selected = SCHEDULE_STYLES.some(style => style.value === currentSettings.scheduleStyle)
         ? currentSettings.scheduleStyle
         : DEFAULT_SETTINGS.scheduleStyle;
 
     SCHEDULE_STYLES.forEach(style => {
-        const item = document.createElement('div');
-        item.className = 'mscp-setting-item mscp-style-item';
-        item.innerHTML = `
-            <label class="mscp-label">
-                <input type="radio" class="mscp-radio" data-key="scheduleStyle" name="mscp-schedule-style" value="${style.value}" ${style.value === selected ? 'checked' : ''}>
-                <span>${style.label}</span>
-            </label>
-            <div class="mscp-style-description">${style.description}</div>
+        const option = document.createElement('label');
+        option.className = 'mscp-option';
+        option.innerHTML = `
+            <input type="radio" class="mscp-radio" data-key="scheduleStyle" name="mscp-schedule-style" value="${style.value}" ${style.value === selected ? 'checked' : ''}>
+            ${createScheduleThumbnail(style.value)}
+            <span class="mscp-option-title">${style.label}</span>
+            <span class="mscp-row-desc">${style.description}</span>
         `;
-        group.appendChild(item);
+        cards.appendChild(option);
     });
 
-    const look = createScheduleLookOptions(currentSettings);
-    group.appendChild(look);
-
-    // Легенда видна, пока работает заменённое расписание
-    if (ScheduleLayout.observer) group.appendChild(createScheduleLegend());
-
-    // Параметры вида нужны только заменённому расписанию
-    const syncLook = () => {
-        const isCustom = group.querySelector('input[name="mscp-schedule-style"]:checked')?.value === 'custom';
-        look.classList.toggle('mscp-look-off', !isCustom);
-        look.querySelectorAll('input').forEach(input => { input.disabled = !isCustom; });
-    };
-    group.addEventListener('change', syncLook);
-    syncLook();
-
-    return group;
+    return cards;
 }
 
 /**
- * Создаёт параметры заменённого расписания: как помечать предмет и красить ли классы
+ * Рисует эскиз вида расписания для карточки выбора
+ * @param {string} style - вид расписания: classic, compact или custom
+ * @returns {string} HTML-строка с SVG-элементом
+ */
+function createScheduleThumbnail(style) {
+    const columns = 5;
+    const rects = [];
+
+    for (let column = 0; column < columns; column++) {
+        const x = 8 + column * 40;
+
+        if (style === 'classic') {
+            // Высокие карточки в сетке со шкалой времени
+            const top = 10 + (column % 2) * 14;
+            rects.push(`<rect x="${x}" y="${top}" width="34" height="28" rx="3" fill="#d1d5db"/>`);
+            rects.push(`<rect x="${x}" y="${top + 34}" width="34" height="28" rx="3" fill="#d1d5db"/>`);
+        } else if (style === 'compact') {
+            // Много низких строк, уместившихся в окно
+            for (let row = 0; row < 6; row++) {
+                if ((row + column) % 4 === 3) continue;
+                rects.push(`<rect x="${x}" y="${8 + row * 13}" width="34" height="10" rx="2" fill="#9ca3af"/>`);
+            }
+        } else {
+            // Цветные карточки по номерам уроков
+            const colors = ['#8b5cf6', '#3b82f6', '#14b8a6', '#f59e0b', '#ec4899'];
+            for (let row = 0; row < 4; row++) {
+                if ((row * 2 + column) % 5 === 4) continue;
+                rects.push(`<rect x="${x}" y="${8 + row * 17}" width="34" height="14" rx="3" fill="${colors[(row + column) % colors.length]}"/>`);
+            }
+        }
+    }
+
+    return `<svg class="mscp-thumb" viewBox="0 0 208 76" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${rects.join('')}</svg>`;
+}
+
+/**
+ * Создаёт параметры заменённого расписания: как помечать предмет, цвет класса и время на карточке
  * @param {Object} currentSettings - текущие настройки
  * @returns {HTMLElement} DOM-элемент с параметрами
  */
 function createScheduleLookOptions(currentSettings) {
     const look = document.createElement('div');
-    look.className = 'mscp-look';
+    look.className = 'mscp-subpanel';
 
     const selected = SCHEDULE_SUBJECT_MARKS.some(mark => mark.value === currentSettings.scheduleSubjectMark)
         ? currentSettings.scheduleSubjectMark
         : DEFAULT_SETTINGS.scheduleSubjectMark;
 
     const marks = SCHEDULE_SUBJECT_MARKS.map(mark => `
-        <label class="mscp-label">
+        <label>
             <input type="radio" class="mscp-radio" data-key="scheduleSubjectMark" name="mscp-subject-mark" value="${mark.value}" ${mark.value === selected ? 'checked' : ''}>
             <span>${mark.label}</span>
         </label>
     `).join('');
 
-    look.innerHTML = `
-        <div class="mscp-look-title">Предмет в заменённом расписании:</div>
-        <div class="mscp-look-row">${marks}</div>
-        <div class="mscp-style-description mscp-look-note">Цвет: полоска слева и легенда. Подпись: название предмета на карточке. Не помечать: ни цвета, ни подписи. Если предмет один, цвет не нужен и не показывается.</div>
-        <div class="mscp-setting-item">
-            <label class="mscp-label">
-                <input type="checkbox" class="mscp-checkbox" data-key="scheduleClassColor" ${currentSettings.scheduleClassColor !== false ? 'checked' : ''}>
-                <span>Цвет класса: у одинаковых классов одинаковый цвет</span>
-            </label>
-        </div>
-        <div class="mscp-setting-item">
-            <label class="mscp-label">
-                <input type="checkbox" class="mscp-checkbox" data-key="scheduleShowTime" ${currentSettings.scheduleShowTime !== false ? 'checked' : ''}>
-                <span>Время урока на карточке</span>
-            </label>
-        </div>
+    const markRow = document.createElement('div');
+    markRow.className = 'mscp-row mscp-row-static';
+    markRow.innerHTML = `
+        <span class="mscp-row-text">
+            <span class="mscp-row-title">Предмет на карточке</span>
+            <span class="mscp-row-desc">Цвет — полоска слева. Подпись — название предмета. Если предмет один, он не помечается</span>
+        </span>
+        <span class="mscp-seg">${marks}</span>
     `;
+
+    look.append(
+        markRow,
+        createSwitchRow('scheduleClassColor', 'Цвет класса', 'У одинаковых классов одинаковый цвет', currentSettings.scheduleClassColor !== false),
+        createSwitchRow('scheduleShowTime', 'Время урока', 'Начало и конец урока на карточке', currentSettings.scheduleShowTime !== false)
+    );
+
+    const hint = document.createElement('div');
+    hint.className = 'mscp-row-desc mscp-hint';
+    hint.textContent = 'Значки урока и домашнего задания и цвета предметов — по кнопке ⓘ рядом с настройками на странице расписания.';
+    look.appendChild(hint);
 
     return look;
 }
 
-/**
- * Создаёт легенду заменённого расписания: цвета предметов и значение значков урока и ДЗ
- * @returns {HTMLElement} DOM-элемент с легендой
- */
-function createScheduleLegend() {
-    const box = document.createElement('div');
-    box.className = 'mscp-look';
-
-    const title = document.createElement('div');
-    title.className = 'mscp-look-title';
-    title.textContent = 'Обозначения в расписании:';
-
-    const legend = document.createElement('div');
-    legend.className = 'mscp-legend';
-
-    for (const { subject, color } of ScheduleLayout.legend) {
-        const item = document.createElement('span');
-        item.className = 'mscp-legend-item';
-        const swatch = document.createElement('i');
-        swatch.style.background = color;
-        item.append(swatch, subject);
-        legend.append(item);
-    }
-
-    const key = document.createElement('span');
-    key.className = 'mscp-legend-key';
-    key.append('У — урок, ДЗ — домашнее задание:');
-    for (const [status, text] of [['done', 'заполнено'], ['late', 'не заполнено'], ['wait', 'ещё нет']]) {
-        const badge = document.createElement('span');
-        badge.className = `mscp-badge mscp-badge-${status}`;
-        badge.textContent = text;
-        key.append(badge);
-    }
-    legend.append(key);
-
-    box.append(title, legend);
-    return box;
-}
-
 
 // ============================================================
-// МОДАЛЬНОЕ ОКНО: кнопки и показ
+// МОДАЛЬНОЕ ОКНО: применение настроек и показ
 // ============================================================
 
 /**
- * Создаёт секцию с кнопками "Отмена" и "Применить"
- * @param {HTMLElement} modalOverlay - оверлей модального окна
- * @param {HTMLElement} settingsSection - секция с настройками (для чтения чекбоксов)
- * @returns {HTMLElement} DOM-элемент с кнопками
+ * Применяет изменённую настройку сразу, без кнопки "Применить"
+ * - Журнал: перекрашивает таблицу, выключает средний балл, убирает баннер
+ * - Расписание: пересобирает выбранный вид
+ * @param {Object} settings - сохранённые настройки
+ * @param {string} key - ключ изменённой настройки
+ * @returns {void}
  */
-function createModalButtons(modalOverlay, settingsSection) {
-    const section = document.createElement('div');
-    section.className = 'mscp-buttons-section';
-
-    const cancelButton = document.createElement('button');
-    cancelButton.className = 'mscp-btn-secondary';
-    cancelButton.textContent = 'Отмена';
-    cancelButton.addEventListener('click', () => modalOverlay.remove());
-
-    const applyButton = document.createElement('button');
-    applyButton.className = 'mscp-btn-primary';
-    applyButton.textContent = 'Применить';
-    applyButton.addEventListener('click', () => {
-        // Скрытые на этой странице настройки сохраняют прежнее значение
-        const newSettings = loadSettings();
-        settingsSection.querySelectorAll('.mscp-checkbox').forEach(checkbox => {
-            newSettings[checkbox.dataset.key] = checkbox.checked;
-        });
-
-        settingsSection.querySelectorAll('.mscp-radio:checked').forEach(radio => {
-            newSettings[radio.dataset.key] = radio.value;
-        });
-
-        saveSettings(newSettings);
-
-        if (isTargetUrl(window.location.href)) {
-            JournalState.settings = newSettings;
-
-            // Применяем настройки скрытия среднего балла
-            if (newSettings.hideAverageMark) {
-                applyHideAverageMarkSetting();
-            }
-
-            // Применяем настройку удаления баннера
-            if (newSettings.hideBanner) {
-                removeBannerAndSetHeight();
-            }
-
-            // Перерисовываем таблицу с новыми настройками
-            processJournalTable(true);
-        }
-
-        // Вид расписания меняется сразу
+function applySettings(settings, key) {
+    if (key.startsWith('schedule')) {
         syncScheduleLayout(window.location.href);
+        return;
+    }
 
-        console.log('Настройки сохранены:', newSettings);
-        modalOverlay.remove();
-    });
+    if (!isTargetUrl(window.location.href)) return;
 
-    section.appendChild(cancelButton);
-    section.appendChild(applyButton);
+    JournalState.settings = settings;
 
-    return section;
+    if (key === 'hideAverageMark' && settings.hideAverageMark) {
+        applyHideAverageMarkSetting();
+    }
+
+    if (key === 'hideBanner' && settings.hideBanner) {
+        removeBannerAndSetHeight();
+    }
+
+    processJournalTable(true);
 }
 
 /**
  * Показывает модальное окно с настройками
- * - Загружает текущие настройки
- * - Создаёт DOM-структуру окна
- * - Добавляет обработчики закрытия (крестик, оверлей, Escape)
+ * - Слева вкладки (если на странице больше одной), справа содержимое выбранной вкладки
+ * - Любое изменение сохраняется и применяется сразу
+ * - Закрывается крестиком, кликом по оверлею и Escape
  * @returns {void}
  */
 function showModal() {
     const currentSettings = loadSettings();
+    const tabs = SETTINGS_TABS.filter(tab => tab.isAvailable());
 
     const overlay = document.createElement('div');
     overlay.className = 'mscp-modal-overlay';
 
-    const window = document.createElement('div');
-    window.className = 'mscp-modal-window';
+    const dialog = document.createElement('div');
+    dialog.className = 'mscp-modal-window';
 
     const header = document.createElement('div');
     header.className = 'mscp-modal-header';
     header.innerHTML = `
-        <h2 class="mscp-modal-title">Настройки дополнения My School Color Point</h2>
-        <button class="mscp-close-btn">&times;</button>
+        <h2 class="mscp-modal-title">My School Color Point<span class="mscp-modal-version">${VERSION}</span></h2>
+        <button type="button" class="mscp-close-btn" title="Закрыть">&times;</button>
     `;
+
+    const body = document.createElement('div');
+    body.className = 'mscp-modal-body';
+
+    const nav = document.createElement('nav');
+    nav.className = 'mscp-modal-nav';
+    nav.hidden = tabs.length < 2;
+    dialog.classList.toggle('mscp-has-nav', !nav.hidden);
 
     const content = document.createElement('div');
     content.className = 'mscp-modal-content';
 
-    const infoSection = createInfoSection();
-    const settingsSection = createSettingsSection(currentSettings);
-    const buttonsSection = createModalButtons(overlay, settingsSection);
+    const showTab = tab => {
+        content.replaceChildren(tab.build(currentSettings));
+        content.scrollTop = 0;
+        nav.querySelectorAll('.mscp-nav-item').forEach(item => {
+            item.classList.toggle('mscp-active', item.dataset.tab === tab.id);
+        });
+    };
 
-    content.append(infoSection, settingsSection, buttonsSection);
-    window.append(header, content);
-    overlay.appendChild(window);
-
-    header.querySelector('.mscp-close-btn').addEventListener('click', () => overlay.remove());
-    overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) overlay.remove();
+    tabs.forEach(tab => {
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'mscp-nav-item';
+        item.dataset.tab = tab.id;
+        item.textContent = tab.label;
+        item.addEventListener('click', () => showTab(tab));
+        nav.appendChild(item);
     });
 
-    const handleEscape = (e) => {
-        if (e.key === 'Escape' && document.body.contains(overlay)) {
-            overlay.remove();
-            document.removeEventListener('keydown', handleEscape);
-        }
+    // Изменение любого поля: сохранить и применить
+    content.addEventListener('change', event => {
+        const input = event.target;
+        const key = input.dataset?.key;
+        if (!key) return;
+
+        const settings = loadSettings();
+        settings[key] = input.type === 'checkbox' ? input.checked : input.value;
+        saveSettings(settings);
+        Object.assign(currentSettings, settings);
+        applySettings(settings, key);
+    });
+
+    body.append(nav, content);
+    dialog.append(header, body);
+    overlay.appendChild(dialog);
+
+    const close = () => {
+        overlay.remove();
+        document.removeEventListener('keydown', handleEscape);
     };
+    const handleEscape = event => {
+        if (event.key === 'Escape') close();
+    };
+
+    header.querySelector('.mscp-close-btn').addEventListener('click', close);
+    overlay.addEventListener('click', event => {
+        if (event.target === overlay) close();
+    });
     document.addEventListener('keydown', handleEscape);
 
+    showTab(tabs[0]);
     document.body.appendChild(overlay);
 }
 
