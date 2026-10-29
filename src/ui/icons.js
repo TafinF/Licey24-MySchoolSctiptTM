@@ -31,6 +31,23 @@ function createHomeworkIcon() {
 }
 
 /**
+ * Создаёт SVG-иконку выбора ученика для ответа (игральная кость)
+ * @returns {string} HTML-строка с SVG-элементом
+ */
+function createPickIcon() {
+    return `
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#909090" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="3"></rect>
+            <circle cx="8.5" cy="8.5" r="1" fill="#909090"></circle>
+            <circle cx="15.5" cy="8.5" r="1" fill="#909090"></circle>
+            <circle cx="12" cy="12" r="1" fill="#909090"></circle>
+            <circle cx="8.5" cy="15.5" r="1" fill="#909090"></circle>
+            <circle cx="15.5" cy="15.5" r="1" fill="#909090"></circle>
+        </svg>
+    `;
+}
+
+/**
  * Создаёт SVG-иконку настроек (шестерёнка с кистью)
  * @returns {string} HTML-строка с SVG-элементом
  */

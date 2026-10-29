@@ -3,12 +3,14 @@
 // ============================================================
 
 /**
- * Создаёт кнопку настроек и добавляет в DOM
+ * Создаёт кнопки журнала (выбор ученика и настройки) и добавляет в DOM
  * @param {HTMLElement} parentElement - элемент, в который добавляется кнопка
  * @returns {void}
  */
 function createButtons(parentElement) {
-    parentElement.appendChild(createSettingsButton());
+    const pick = createPickButton();
+    pick.style.marginRight = '8px';
+    parentElement.append(pick, createSettingsButton());
 }
 
 /**
@@ -25,6 +27,25 @@ function createSettingsButton() {
     button.innerHTML = createSettingsIcon();
     button.title = 'Настройки дополнения';
     button.addEventListener('click', showModal);
+    buttonContainer.appendChild(button);
+
+    return buttonContainer;
+}
+
+/**
+ * Создаёт кнопку выбора ученика для ответа
+ * @returns {HTMLElement} контейнер с кнопкой
+ */
+function createPickButton() {
+    const buttonContainer = document.createElement('div');
+    buttonContainer.className = 'mscp-pick-box';
+    buttonContainer.style.cssText = 'box-shadow: 1px 1px 4px 0px rgba(0, 0, 0, 0.07); border-radius: 8px; display: inline-flex;';
+
+    const button = document.createElement('button');
+    button.className = 'mscp-button';
+    button.innerHTML = createPickIcon();
+    button.title = 'Выбрать ученика для ответа. Повторное нажатие снимает подсветку, названный ученик сегодня больше не выпадет';
+    button.addEventListener('click', () => StudentPicker.pick(button));
     buttonContainer.appendChild(button);
 
     return buttonContainer;

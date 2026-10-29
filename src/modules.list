@@ -36,5 +36,6 @@ ui/buttons.js
 ui/export.js
 ui/settings-form.js
 ui/modal.js
+ui/pick-student.js
 
 main.js

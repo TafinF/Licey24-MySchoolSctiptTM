@@ -225,8 +225,16 @@ const DEFAULT_SETTINGS = {
     /** Цветной прямоугольник у класса в заменённом расписании */
     scheduleClassColor: true,
     /** Время начала и конца урока на карточке в заменённом расписании */
-    scheduleShowTime: true
+    scheduleShowTime: true,
+    /** Выбор ученика для ответа: biased — предвзято (по оценкам и давности), random — все равновероятны */
+    pickMode: 'biased'
 };
+
+/** Способы выбора ученика для ответа */
+const PICK_MODES = [
+    { value: 'biased', label: 'Предвзято' },
+    { value: 'random', label: 'Случайно' }
+];
 
 /** Способы пометить предмет в заменённом расписании */
 const SCHEDULE_SUBJECT_MARKS = [

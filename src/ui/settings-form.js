@@ -132,11 +132,41 @@ function createJournalTab(currentSettings) {
 
     tab.append(
         createJournalInfo(),
+        createSection('Вызов к доске', createPickModeRow(currentSettings)),
         createSection('Цветной режим', ...colorRows),
         createSection('Страница', ...pageRows),
         createSection('Действия', ...actionRows)
     );
     return tab;
+}
+
+/**
+ * Создаёт строку выбора способа вызова ученика к доске
+ * @param {Object} currentSettings - текущие настройки
+ * @returns {HTMLElement} DOM-элемент строки
+ */
+function createPickModeRow(currentSettings) {
+    const selected = PICK_MODES.some(mode => mode.value === currentSettings.pickMode)
+        ? currentSettings.pickMode
+        : DEFAULT_SETTINGS.pickMode;
+
+    const modes = PICK_MODES.map(mode => `
+        <label>
+            <input type="radio" class="mscp-radio" data-key="pickMode" name="mscp-pick-mode" value="${mode.value}" ${mode.value === selected ? 'checked' : ''}>
+            <span>${mode.label}</span>
+        </label>
+    `).join('');
+
+    const row = document.createElement('div');
+    row.className = 'mscp-row mscp-row-static';
+    row.innerHTML = `
+        <span class="mscp-row-text">
+            <span class="mscp-row-title">Выбор ученика для ответа</span>
+            <span class="mscp-row-desc">Предвзято: чем меньше оценок и чем давнее последняя, тем вероятнее; кто отвечал на последнем уроке, выпадает редко. Случайно: у всех присутствующих шансы равны. За день один и тот же ученик не выпадает дважды</span>
+        </span>
+        <span class="mscp-seg">${modes}</span>
+    `;
+    return row;
 }
 
 /**
