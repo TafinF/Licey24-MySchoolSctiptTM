@@ -31,7 +31,7 @@ function createSettingsButton() {
 }
 
 /**
- * Создаёт кнопку расписания коллег
+ * Создаёт кнопку расписания коллег и классов
  * @returns {HTMLElement} контейнер с кнопкой
  */
 function createColleaguesButton() {
@@ -42,7 +42,7 @@ function createColleaguesButton() {
     const button = document.createElement('button');
     button.className = 'mscp-button';
     button.innerHTML = createColleaguesIcon();
-    button.title = 'Расписание коллег';
+    button.title = 'Расписание коллег и классов';
     button.addEventListener('click', () => Colleagues.open());
     buttonContainer.appendChild(button);
 
