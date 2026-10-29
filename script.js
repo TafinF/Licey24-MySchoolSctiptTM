@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         My School Color Point
 // @namespace    http://tampermonkey.net/
-// @version      2026-10-29_19-18-04
+// @version      2026-10-29_19-26-38
 // @description  Окрашивает оценки в разные цвета в Моя Школа
 // @author       Tafintsev Feodor taf.f11@ya.ru
 // @match        https://authedu.mosreg.ru/*
@@ -22,7 +22,7 @@
  * Используется в Tampermonkey и отображается в меню настроек
  * Подставляется автоматически при сборке (build.sh)
  */
-const VERSION = '2026-10-29_19-18-04';
+const VERSION = '2026-10-29_19-26-38';
 
 /**
  * Основная конфигурация скрипта
@@ -6476,8 +6476,13 @@ const StudentPicker = {
     /** Во сколько раз реже выбирается ученик, получивший оценку на последнем уроке */
     RECENT_FACTOR: 0.1,
 
-    /** Столько оценок уменьшает вес вдвое: вес оценок = 1 / (1 + оценок / MARKS_HALF) */
+    /**
+     * Множитель за оценки = (1 / (1 + оценок / MARKS_HALF)) ^ MARKS_POWER
+     * Квадрат (MARKS_POWER = 2) делает нехватку оценок главным признаком: давность не должна перевешивать
+     * ученика с большим числом оценок
+     */
     MARKS_HALF: 2,
+    MARKS_POWER: 2,
 
     /** @type {boolean} Идёт ли сейчас загрузка данных для выбора */
     busy: false,
@@ -6619,7 +6624,7 @@ const StudentPicker = {
     weight(student, mode) {
         if (mode !== 'biased') return 1;
 
-        const fewMarks = 1 / (1 + student.marks / this.MARKS_HALF);
+        const fewMarks = (1 / (1 + student.marks / this.MARKS_HALF)) ** this.MARKS_POWER;
         const days = student.days === null ? this.MAX_DAYS : Math.min(student.days, this.MAX_DAYS);
         const longAgo = 1 + days / this.RECENCY_DAYS;
         return fewMarks * longAgo * (student.recent ? this.RECENT_FACTOR : 1);
@@ -6707,10 +6712,10 @@ const StudentPicker = {
     /**
      * Подсвечивает строку выбранного ученика и убирает подсветку с остальных
      * Вызывается и при перерисовке таблицы журнала, чтобы подсветка не пропадала
-     * @param {boolean} [scroll=false] - прокрутить строку в видимую область
+     * @param {boolean} [announce=false] - сообщить, если выбранного ученика нет в таблице журнала
      * @returns {void}
      */
-    applyHighlight(scroll = false) {
+    applyHighlight(announce = false) {
         const saved = this.dayState().active;
         const body = document.querySelector(CONFIG.SELECTORS.JOURNAL_TABLE)?.lastChild;
         if (!body?.rows) return;
@@ -6744,8 +6749,7 @@ const StudentPicker = {
             }
         }
 
-        if (scroll && saved && !found) this.toast(`Выбран ${saved.name}, но в таблице журнала его нет.`);
-        if (scroll) found?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        if (announce && saved && !found) this.toast(`Выбран ${saved.name}, но в таблице журнала его нет.`);
     },
 
     /**
