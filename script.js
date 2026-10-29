@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         My School Color Point
 // @namespace    http://tampermonkey.net/
-// @version      2026-10-29_16-40-49
+// @version      2026-10-29_18-22-35
 // @description  Окрашивает оценки в разные цвета в Моя Школа
 // @author       Tafintsev Feodor taf.f11@ya.ru
 // @match        https://authedu.mosreg.ru/*
@@ -22,7 +22,7 @@
  * Используется в Tampermonkey и отображается в меню настроек
  * Подставляется автоматически при сборке (build.sh)
  */
-const VERSION = '2026-10-29_16-40-49';
+const VERSION = '2026-10-29_18-22-35';
 
 /**
  * Основная конфигурация скрипта
@@ -3189,15 +3189,15 @@ const ScheduleLayout = {
 // ============================================================
 
 /**
- * Получает список учителей школы и недельное расписание любого учителя
+ * Получает списки учителей и классов школы и недельное расписание любого учителя или класса
  * - Вход берётся у самого сайта: токен из cookie, год и школа из его localStorage, пароли не нужны
  * - Всё полученное кладётся в localStorage (ключ CONFIG.COLLEAGUES.CACHE_KEY), чтобы не гонять лишние запросы:
- *   список учителей живёт неделю, текущая и будущие недели — несколько часов, прошедшие недели не меняются
+ *   списки учителей и классов живут неделю, текущая и будущие недели — несколько часов, прошедшие недели не меняются
  * - Если сайт не ответил, а в кеше есть устаревшие данные, отдаются они с пометкой stale
- * - Закреплённые учителя и последний выбранный лежат отдельным ключом: сброс кеша их не трогает
+ * - Закреплённые учителя и классы, последний выбор и режим лежат отдельным ключом: сброс кеша их не трогает
  */
 const ColleagueApi = {
-    /** @type {{teachers: ?{key: string, at: number, list: Array}, weeks: Object}|null} Кеш в памяти, зеркало localStorage */
+    /** @type {{teachers: ?{key: string, at: number, list: Array}, classes: ?{key: string, at: number, list: Array}, weeks: Object}|null} Кеш в памяти, зеркало localStorage */
     store: null,
 
     /**
@@ -3308,7 +3308,7 @@ const ColleagueApi = {
 
     /**
      * Кеш из памяти; при первом обращении читается из localStorage
-     * @returns {{teachers: ?Object, weeks: Object}}
+     * @returns {{teachers: ?Object, classes: ?Object, weeks: Object}}
      */
     load() {
         if (this.store) return this.store;
@@ -3320,7 +3320,7 @@ const ColleagueApi = {
             console.error('Ошибка чтения кеша расписаний:', error);
         }
 
-        this.store = { teachers: saved?.teachers ?? null, weeks: saved?.weeks ?? {} };
+        this.store = { teachers: saved?.teachers ?? null, classes: saved?.classes ?? null, weeks: saved?.weeks ?? {} };
         return this.store;
     },
 
@@ -3345,11 +3345,11 @@ const ColleagueApi = {
     },
 
     /**
-     * Полностью очищает кеш расписаний (закреплённые учителя остаются)
+     * Полностью очищает кеш расписаний (закреплённые учителя и классы остаются)
      * @returns {void}
      */
     clear() {
-        this.store = { teachers: null, weeks: {} };
+        this.store = { teachers: null, classes: null, weeks: {} };
         try {
             localStorage.removeItem(CONFIG.COLLEAGUES.CACHE_KEY);
         } catch (error) {
@@ -3358,20 +3358,27 @@ const ColleagueApi = {
     },
 
     /**
-     * Закреплённые учителя и последний выбранный
-     * @returns {{ids: number[], last: ?number}}
+     * Закреплённые и последние выбранные учитель и класс, последний открытый режим
+     * @returns {{ids: number[], last: ?number, classIds: number[], lastClass: ?number, mode: string}}
+     *          ids и last — учителя, classIds и lastClass — классы, mode — 'teachers' или 'classes'
      */
     loadFavorites() {
         try {
             const saved = JSON.parse(localStorage.getItem(CONFIG.COLLEAGUES.FAVORITES_KEY));
-            return { ids: saved?.ids ?? [], last: saved?.last ?? null };
+            return {
+                ids: saved?.ids ?? [],
+                last: saved?.last ?? null,
+                classIds: saved?.classIds ?? [],
+                lastClass: saved?.lastClass ?? null,
+                mode: saved?.mode === 'classes' ? 'classes' : 'teachers'
+            };
         } catch (error) {
-            return { ids: [], last: null };
+            return { ids: [], last: null, classIds: [], lastClass: null, mode: 'teachers' };
         }
     },
 
     /**
-     * @param {{ids: number[], last: ?number}} favorites
+     * @param {{ids: number[], last: ?number, classIds: number[], lastClass: ?number, mode: string}} favorites
      * @returns {void}
      */
     saveFavorites(favorites) {
@@ -3385,14 +3392,16 @@ const ColleagueApi = {
     // ---------- данные ----------
 
     /**
-     * Список учителей школы: кеш, если он свежий, иначе запрос (по 100 на страницу)
-     * @param {boolean} [force=false] - игнорировать кеш
-     * @returns {Promise<{list: Array<{id: number, name: string, subjects: string}>, at: number, stale: boolean}>}
+     * Список из кеша, если он свежий, иначе запрос; при неудаче — устаревший список из кеша
+     * @param {'teachers'|'classes'} slot - какой список
+     * @param {function(number, number): Promise<Array>} fetchList - запрос списка, получает учебный год и школу
+     * @param {boolean} force - игнорировать кеш
+     * @returns {Promise<{list: Array, at: number, stale: boolean}>}
      */
-    async getTeachers(force = false) {
+    async getList(slot, fetchList, force) {
         const { year, school } = this.session() ?? {};
         const key = `${school}-${year}`;
-        const cached = this.load().teachers;
+        const cached = this.load()[slot];
         const usable = cached?.key === key ? cached : null;
 
         if (usable && !force && Date.now() - usable.at < CONFIG.COLLEAGUES.TEACHERS_TTL_MS) {
@@ -3400,6 +3409,24 @@ const ColleagueApi = {
         }
 
         try {
+            const list = await fetchList(year, school);
+            const store = this.load();
+            store[slot] = { key, at: Date.now(), list };
+            this.save();
+            return { list, at: store[slot].at, stale: false };
+        } catch (error) {
+            if (usable) return { list: usable.list, at: usable.at, stale: true };
+            throw error;
+        }
+    },
+
+    /**
+     * Список учителей школы (по 100 на страницу)
+     * @param {boolean} [force=false] - игнорировать кеш
+     * @returns {Promise<{list: Array<{id: number, name: string, subjects: string}>, at: number, stale: boolean}>}
+     */
+    getTeachers(force = false) {
+        return this.getList('teachers', async (year, school) => {
             const profiles = [];
             for (let page = 1; page <= 20; page++) {
                 const data = await this.get('/core/teacher/v1/teacher_profiles', {
@@ -3409,7 +3436,7 @@ const ColleagueApi = {
                 if (data.length < 100) break;
             }
 
-            const list = profiles
+            return profiles
                 .filter(profile => !profile.deleted && !profile.virtual)
                 .map(profile => ({
                     id: profile.id,
@@ -3417,30 +3444,46 @@ const ColleagueApi = {
                     subjects: (profile.subjects ?? []).map(subject => subject.name).slice(0, 3).join(', ')
                 }))
                 .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
-
-            const store = this.load();
-            store.teachers = { key, at: Date.now(), list };
-            this.save();
-            return { list, at: store.teachers.at, stale: false };
-        } catch (error) {
-            if (usable) return { list: usable.list, at: usable.at, stale: true };
-            throw error;
-        }
+        }, force);
     },
 
     /**
-     * Уроки учителя за неделю по дням и номерам уроков школьного звонка
+     * Список классов школы, по параллелям
+     * @param {boolean} [force=false] - игнорировать кеш
+     * @returns {Promise<{list: Array<{id: number, name: string, level: number, hint: string}>, at: number, stale: boolean}>}
+     */
+    getClasses(force = false) {
+        return this.getList('classes', async (year, school) => {
+            const units = await this.get('/core/teacher/v1/class_units', {
+                academic_year_id: year, school_id: school, per_page: 200
+            });
+
+            return units
+                .map(unit => ({
+                    id: unit.id,
+                    name: unit.name,
+                    level: Number.parseInt(unit.name, 10) || unit.class_level_id || 0,
+                    hint: unit.student_count ? `${unit.student_count} уч.` : ''
+                }))
+                .sort((a, b) => a.level - b.level || a.name.localeCompare(b.name, 'ru'));
+        }, force);
+    },
+
+    /**
+     * Уроки учителя или класса за неделю по дням и номерам уроков школьного звонка
      * Отменённые уроки и уроки, перенесённые на другую дату, не берутся: сайт отдаёт их на старом месте
-     * @param {number} teacherId - id профиля учителя
+     * @param {{type: 'teacher'|'class', id: number}} owner - чьё расписание: учителя или класса
      * @param {Date} monday - понедельник нужной недели
      * @param {boolean} [force=false] - игнорировать кеш
-     * @returns {Promise<{days: Object<string, Array<[number, string, string, string]>>, at: number, stale: boolean, fromCache: boolean}>}
-     *          days: {ГГГГ-ММ-ДД: [[номер урока, время начала, класс, предмет], ...]}
+     * @returns {Promise<{days: Object<string, Array<[number, string, string, string, string]>>, at: number, stale: boolean, fromCache: boolean}>}
+     *          days: {ГГГГ-ММ-ДД: [[номер урока, время начала, класс, предмет, учитель], ...]}
      */
-    async getWeek(teacherId, monday, force = false) {
+    async getWeek(owner, monday, force = false) {
+        const isClass = owner.type === 'class';
         const from = this.isoDate(monday);
         const to = this.isoDate(this.addDays(monday, 6));
-        const key = `${teacherId}|${from}`;
+        // Ключ учителя без приставки: недели, сохранённые до появления классов, остаются в силе
+        const key = `${isClass ? 'c' : ''}${owner.id}|${from}`;
         const cached = this.load().weeks[key];
 
         // Прошедшая неделя не меняется, остальные устаревают
@@ -3452,8 +3495,9 @@ const ColleagueApi = {
             const items = [];
             for (let page = 1; page <= 5; page++) {
                 const data = await this.get('/plan/teacher/v1/schedule_items', {
-                    academic_year_id: this.session()?.year, teacher_id: teacherId, from, to,
-                    with_group_class_subject_info: true, per_page: 300, page
+                    academic_year_id: this.session()?.year,
+                    ...(isClass ? { class_unit_id: owner.id } : { teacher_id: owner.id }),
+                    from, to, with_group_class_subject_info: true, per_page: 300, page
                 });
                 items.push(...data);
                 if (data.length < 300) break;
@@ -3470,10 +3514,20 @@ const ColleagueApi = {
     },
 
     /**
+     * "Байч Екатерина Юрьевна" → "Байч Е.Ю."
+     * @param {?string} fullName - ФИО полностью
+     * @returns {string} пустая строка, если имени нет
+     */
+    shortName(fullName) {
+        const [surname, ...rest] = (fullName ?? '').trim().split(/\s+/);
+        return [surname, rest.map(part => `${part[0]}.`).join('')].filter(Boolean).join(' ');
+    },
+
+    /**
      * Сворачивает ответ сайта в короткий вид для кеша
      * Номер урока считается по времени начала: поле lesson_number в ответе не школьный номер
      * @param {Array} items - записи schedule_items
-     * @returns {Object<string, Array<[number, string, string, string]>>}
+     * @returns {Object<string, Array<[number, string, string, string, string]>>}
      */
     compactWeek(items) {
         const pad = value => String(value).padStart(2, '0');
@@ -3490,7 +3544,8 @@ const ColleagueApi = {
                 lessonNumberFromStart(hours, minutes),
                 `${pad(hours)}:${pad(minutes)}`,
                 item.class_unit_name ?? '',
-                item.subject_name ?? ''
+                item.subject_name ?? '',
+                this.shortName(item.teacher_name)
             ]);
         });
 
@@ -3501,14 +3556,16 @@ const ColleagueApi = {
 
 
 // ============================================================
-// РАСПИСАНИЕ КОЛЛЕГ: окно с выбором учителя и сеткой недели
+// РАСПИСАНИЕ КОЛЛЕГ И КЛАССОВ: окно с выбором и сеткой недели
 // ============================================================
 
 /**
  * Окно "Расписание коллег"
- * - Слева список учителей школы с поиском и закреплением, справа сетка недели: дни и номера уроков школьного звонка
- * - Занятое время показано карточкой (класс и предмет), свободное — зелёным
- * - Режим "Свободны вместе со мной" дополнительно берёт ваше расписание и выделяет часы, свободные у обоих
+ * - Вверху слева переключатель "Учителя | Классы", ниже список с поиском и закреплением; справа сетка недели:
+ *   дни и номера уроков школьного звонка
+ * - У учителя в занятой ячейке класс и предмет, у класса — предмет и учитель (подгруппы идут друг под другом);
+ *   свободное время зелёное
+ * - Режим "Свободны вместе со мной" берёт ваше расписание и выделяет часы, свободные у обоих
  * - Открывается на неделе, которая выбрана на странице расписания; дальше недели листаются в самом окне
  * - Свободно = нет урока в расписании; внеурочка, дежурства и совещания в нём не учитываются
  */
@@ -3544,6 +3601,67 @@ const Colleagues = {
         return ColleagueApi.weekStart(date);
     },
 
+    // ---------- выбор ----------
+
+    /**
+     * Открыт ли режим классов
+     * @returns {boolean}
+     */
+    isClasses() {
+        return this.state.mode === 'classes';
+    },
+
+    /**
+     * Список текущего режима
+     * @returns {Array}
+     */
+    items() {
+        return this.isClasses() ? this.state.classes : this.state.teachers;
+    },
+
+    /**
+     * Выбранные учитель или класс текущего режима
+     * @returns {?number}
+     */
+    currentId() {
+        return this.isClasses() ? this.state.classId : this.state.teacherId;
+    },
+
+    /**
+     * Запоминает выбор: в окне и в закреплённых
+     * @param {?number} id - учитель или класс текущего режима
+     * @returns {void}
+     */
+    setCurrent(id) {
+        const { state } = this;
+        if (this.isClasses()) {
+            state.classId = id;
+            state.favorites.lastClass = id;
+        } else {
+            state.teacherId = id;
+            state.favorites.last = id;
+        }
+        ColleagueApi.saveFavorites(state.favorites);
+    },
+
+    /**
+     * Закреплённые текущего режима
+     * @returns {number[]}
+     */
+    pinned() {
+        return this.isClasses() ? this.state.favorites.classIds : this.state.favorites.ids;
+    },
+
+    /**
+     * Чьё расписание запрашивать
+     * @returns {{type: 'teacher'|'class', id: number}}
+     */
+    owner() {
+        return { type: this.isClasses() ? 'class' : 'teacher', id: this.currentId() };
+    },
+
+    // ---------- открытие и загрузка ----------
+
     /**
      * Открывает окно
      * @returns {void}
@@ -3556,9 +3674,12 @@ const Colleagues = {
 
         const favorites = ColleagueApi.loadFavorites();
         this.state = {
+            mode: favorites.mode,
             teachers: [],
+            classes: [],
             favorites,
             teacherId: favorites.last,
+            classId: favorites.lastClass,
             monday: this.pageMonday(),
             together: false,
             filter: '',
@@ -3574,12 +3695,13 @@ const Colleagues = {
         this.overlay.innerHTML = `
             <div class="mscp-col-window">
                 <div class="mscp-modal-header">
-                    <h2 class="mscp-modal-title">Расписание коллег</h2>
+                    <h2 class="mscp-modal-title">Расписание коллег и классов</h2>
                     <button class="mscp-close-btn">&times;</button>
                 </div>
                 <div class="mscp-col-body">
                     <div class="mscp-col-side">
-                        <input type="search" class="mscp-col-search" placeholder="Поиск учителя">
+                        <div class="mscp-col-modes"></div>
+                        <input type="search" class="mscp-col-search">
                         <div class="mscp-col-list"></div>
                     </div>
                     <div class="mscp-col-main">
@@ -3607,7 +3729,7 @@ const Colleagues = {
 
         document.body.appendChild(this.overlay);
         this.render();
-        this.init();
+        this.loadList();
     },
 
     /**
@@ -3622,34 +3744,41 @@ const Colleagues = {
     },
 
     /**
-     * Загружает список учителей и, если учитель уже выбирался раньше, его неделю
+     * Загружает список текущего режима и, если выбор уже был, его неделю
      * @returns {Promise<void>}
      */
-    async init() {
-        try {
-            const teachers = await ColleagueApi.getTeachers();
-            if (!this.overlay) return;
+    async loadList() {
+        const { state } = this;
+        const mode = state.mode;
 
-            this.state.teachers = teachers.list;
-            this.state.note = teachers.stale ? 'Список учителей взят из кеша: сайт не ответил.' : '';
-            if (!teachers.list.some(teacher => teacher.id === this.state.teacherId)) this.state.teacherId = null;
+        state.loading = true;
+        state.error = '';
+        state.note = '';
+
+        try {
+            const result = mode === 'classes' ? await ColleagueApi.getClasses() : await ColleagueApi.getTeachers();
+            if (!this.overlay || state.mode !== mode) return;
+
+            state[mode] = result.list;
+            if (result.stale) state.note = `Список ${mode === 'classes' ? 'классов' : 'учителей'} взят из кеша: сайт не ответил.`;
+            if (!result.list.some(item => item.id === this.currentId())) this.setCurrent(null);
         } catch (error) {
-            if (!this.overlay) return;
-            this.state.error = ColleagueApi.describeError(error);
+            if (!this.overlay || state.mode !== mode) return;
+            state.error = ColleagueApi.describeError(error);
         }
 
-        this.state.loading = false;
+        state.loading = false;
         this.render();
-        if (this.state.teacherId) this.loadWeek();
+        if (this.currentId()) this.loadWeek();
     },
 
     /**
-     * Загружает неделю выбранного учителя (и вашу, если включён режим "вместе со мной")
+     * Загружает неделю выбранного учителя или класса (и вашу, если включён режим "вместе со мной")
      * @param {boolean} [force=false] - игнорировать кеш
      * @returns {Promise<void>}
      */
     async loadWeek(force = false) {
-        const state = this.state;
+        const { state } = this;
         const id = ++this.loadId;
         const myId = ColleagueApi.session()?.profile;
 
@@ -3658,10 +3787,11 @@ const Colleagues = {
         this.renderGrid();
 
         try {
-            const needMine = state.together && myId && myId !== state.teacherId;
+            // Свою неделю незачем брать, когда смотрим на себя
+            const needMine = state.together && myId && !(!this.isClasses() && myId === this.currentId());
             const [week, mine] = await Promise.all([
-                ColleagueApi.getWeek(state.teacherId, state.monday, force),
-                needMine ? ColleagueApi.getWeek(myId, state.monday, force) : null
+                ColleagueApi.getWeek(this.owner(), state.monday, force),
+                needMine ? ColleagueApi.getWeek({ type: 'teacher', id: myId }, state.monday, force) : null
             ]);
             if (id !== this.loadId) return;
 
@@ -3679,29 +3809,57 @@ const Colleagues = {
     },
 
     /**
-     * Выбирает учителя
-     * @param {number} teacherId
+     * Переключает режим: учителя или классы
+     * @param {'teachers'|'classes'} mode
      * @returns {void}
      */
-    selectTeacher(teacherId) {
-        this.state.teacherId = teacherId;
-        this.state.favorites.last = teacherId;
-        ColleagueApi.saveFavorites(this.state.favorites);
+    setMode(mode) {
+        const { state } = this;
+        if (state.mode === mode) return;
+
+        state.mode = mode;
+        state.favorites.mode = mode;
+        ColleagueApi.saveFavorites(state.favorites);
+
+        state.filter = '';
+        state.week = null;
+        state.mine = null;
+        state.error = '';
+        this.loadId++;
+
+        if (this.items().length) {
+            state.loading = false;
+            this.render();
+            if (this.currentId()) this.loadWeek();
+        } else {
+            state.loading = true;
+            this.render();
+            this.loadList();
+        }
+    },
+
+    /**
+     * Выбирает учителя или класс
+     * @param {number} id
+     * @returns {void}
+     */
+    select(id) {
+        this.setCurrent(id);
         this.renderList();
         this.loadWeek();
     },
 
     /**
-     * Закрепляет учителя вверху списка или снимает закрепление
-     * @param {number} teacherId
+     * Закрепляет учителя или класс вверху списка или снимает закрепление
+     * @param {number} id
      * @returns {void}
      */
-    toggleFavorite(teacherId) {
-        const ids = this.state.favorites.ids;
-        const index = ids.indexOf(teacherId);
+    toggleFavorite(id) {
+        const ids = this.pinned();
+        const index = ids.indexOf(id);
 
         if (index >= 0) ids.splice(index, 1);
-        else ids.push(teacherId);
+        else ids.push(id);
 
         ColleagueApi.saveFavorites(this.state.favorites);
         this.renderList();
@@ -3714,7 +3872,7 @@ const Colleagues = {
      */
     shiftWeek(weeks) {
         this.state.monday = ColleagueApi.addDays(this.state.monday, weeks * 7);
-        if (this.state.teacherId) this.loadWeek();
+        if (this.currentId()) this.loadWeek();
         else this.renderToolbar();
     },
 
@@ -3741,6 +3899,7 @@ const Colleagues = {
     render() {
         if (!this.overlay) return;
 
+        this.renderModes();
         this.renderList();
         this.renderToolbar();
         this.renderGrid();
@@ -3748,52 +3907,90 @@ const Colleagues = {
     },
 
     /**
-     * Список учителей: закреплённые сверху, фильтр по поиску
+     * Переключатель режимов и подсказка в поле поиска
+     * @returns {void}
+     */
+    renderModes() {
+        const box = this.overlay?.querySelector('.mscp-col-modes');
+        if (!box) return;
+
+        const buttons = [['teachers', 'Учителя'], ['classes', 'Классы']].map(([mode, label]) => {
+            const button = this.el('button', `mscp-col-mode${this.state.mode === mode ? ' mscp-col-active-mode' : ''}`, label);
+            button.addEventListener('click', () => this.setMode(mode));
+            return button;
+        });
+
+        box.replaceChildren(...buttons);
+
+        const search = this.overlay.querySelector('.mscp-col-search');
+        search.placeholder = this.isClasses() ? 'Поиск класса' : 'Поиск учителя';
+        search.value = this.state.filter;
+    },
+
+    /**
+     * Список: закреплённые сверху, фильтр по поиску; классы разбиты по параллелям
      * @returns {void}
      */
     renderList() {
         const list = this.overlay?.querySelector('.mscp-col-list');
         if (!list) return;
 
-        const { teachers, favorites, teacherId, filter } = this.state;
+        const isClasses = this.isClasses();
+        const { filter, loading } = this.state;
+        const currentId = this.currentId();
+        const pinnedIds = this.pinned();
         const normalize = text => text.toLowerCase().replace(/ё/g, 'е');
         const query = normalize(filter.trim());
-        const pinned = id => favorites.ids.includes(id);
+        const isPinned = id => pinnedIds.includes(id);
 
-        const shown = teachers
-            .filter(teacher => !query || normalize(`${teacher.name} ${teacher.subjects}`).includes(query))
-            .sort((a, b) => Number(pinned(b.id)) - Number(pinned(a.id)));
+        const shown = this.items()
+            .filter(item => !query || normalize(`${item.name} ${item.subjects ?? ''}`).includes(query))
+            .sort((a, b) => Number(isPinned(b.id)) - Number(isPinned(a.id)));
 
-        list.replaceChildren(...shown.map(teacher => {
-            const row = this.el('div', `mscp-col-item${teacher.id === teacherId ? ' mscp-col-active' : ''}`);
-            const star = this.el('button', `mscp-col-star${pinned(teacher.id) ? ' mscp-col-pinned' : ''}`, '★');
-            star.title = pinned(teacher.id) ? 'Убрать из закреплённых' : 'Закрепить вверху списка';
+        const children = [];
+        let group = null;
+        shown.forEach(item => {
+            if (isClasses) {
+                const heading = isPinned(item.id) ? 'Закреплённые' : `${item.level}-е классы`;
+                if (heading !== group) {
+                    group = heading;
+                    children.push(this.el('div', 'mscp-col-group', heading));
+                }
+            }
+
+            const row = this.el('div', `mscp-col-item${item.id === currentId ? ' mscp-col-active' : ''}`);
+            const star = this.el('button', `mscp-col-star${isPinned(item.id) ? ' mscp-col-pinned' : ''}`, '★');
+            star.title = isPinned(item.id) ? 'Убрать из закреплённых' : 'Закрепить вверху списка';
             star.addEventListener('click', event => {
                 event.stopPropagation();
-                this.toggleFavorite(teacher.id);
+                this.toggleFavorite(item.id);
             });
 
             const text = this.el('div', 'mscp-col-name');
-            text.append(this.el('div', '', teacher.name), this.el('div', 'mscp-col-subjects', teacher.subjects));
+            text.append(this.el('div', '', item.name), this.el('div', 'mscp-col-subjects', isClasses ? item.hint : item.subjects));
             row.append(text, star);
-            row.addEventListener('click', () => this.selectTeacher(teacher.id));
-            return row;
-        }));
+            row.addEventListener('click', () => this.select(item.id));
+            children.push(row);
+        });
 
-        if (!shown.length && !this.state.loading) {
-            list.append(this.el('div', 'mscp-col-empty', teachers.length ? 'Никого не нашлось' : 'Список пуст'));
+        if (!shown.length && !loading) {
+            children.push(this.el('div', 'mscp-col-empty', this.items().length ? 'Ничего не нашлось' : 'Список пуст'));
         }
+
+        list.replaceChildren(...children);
     },
 
     /**
-     * Панель над сеткой: неделя, переключатель недель, режим "вместе со мной", обновление
+     * Панель над сеткой: кто выбран, переключатель недель, режим "вместе со мной", обновление
      * @returns {void}
      */
     renderToolbar() {
         const toolbar = this.overlay?.querySelector('.mscp-col-toolbar');
         if (!toolbar) return;
 
-        const { monday, teacherId, together } = this.state;
+        const { monday, together } = this.state;
+        const currentId = this.currentId();
+        const isClasses = this.isClasses();
         const sunday = ColleagueApi.addDays(monday, 6);
         const format = date => date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
 
@@ -3806,8 +4003,10 @@ const Colleagues = {
 
         const label = this.el('div', 'mscp-col-period', `${format(monday)} – ${format(sunday)}.${sunday.getFullYear()}`);
 
-        const teacher = this.state.teachers.find(item => item.id === teacherId);
-        const who = this.el('div', 'mscp-col-who', teacher?.name ?? 'Выберите учителя в списке');
+        const selected = this.items().find(item => item.id === currentId);
+        const title = selected ? (isClasses ? `Класс ${selected.name}` : selected.name)
+            : (isClasses ? 'Выберите класс в списке' : 'Выберите учителя в списке');
+        const who = this.el('div', 'mscp-col-who', title);
 
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
@@ -3815,14 +4014,14 @@ const Colleagues = {
         checkbox.checked = together;
         checkbox.addEventListener('change', () => {
             this.state.together = checkbox.checked;
-            if (teacherId) this.loadWeek();
+            if (this.currentId()) this.loadWeek();
         });
         const togetherLabel = this.el('label', 'mscp-label');
         togetherLabel.append(checkbox, 'Свободны вместе со мной');
 
         const refresh = this.el('button', 'mscp-btn-action mscp-col-refresh', 'Обновить');
         refresh.title = 'Запросить неделю у сайта, не глядя в кеш';
-        refresh.disabled = !teacherId;
+        refresh.disabled = !currentId;
         refresh.addEventListener('click', () => this.loadWeek(true));
 
         toolbar.replaceChildren(who, prev, label, next, togetherLabel, refresh);
@@ -3836,11 +4035,15 @@ const Colleagues = {
         const grid = this.overlay?.querySelector('.mscp-col-grid');
         if (!grid) return;
 
-        const { teacherId, loading, error, week, mine, monday } = this.state;
+        const { loading, error, week, mine, monday } = this.state;
+        const isClasses = this.isClasses();
 
         if (error) return grid.replaceChildren(this.el('div', 'mscp-col-message mscp-col-error', error));
         if (loading) return grid.replaceChildren(this.el('div', 'mscp-col-message', 'Загрузка…'));
-        if (!teacherId || !week) return grid.replaceChildren(this.el('div', 'mscp-col-message', 'Выберите учителя в списке слева.'));
+        if (!this.currentId() || !week) {
+            return grid.replaceChildren(this.el('div', 'mscp-col-message',
+                isClasses ? 'Выберите класс в списке слева.' : 'Выберите учителя в списке слева.'));
+        }
 
         const dates = this.DAYS.map((_, index) => ColleagueApi.addDays(monday, index));
         const today = ColleagueApi.isoDate(new Date());
@@ -3880,28 +4083,41 @@ const Colleagues = {
 
     /**
      * Ячейка сетки
-     * @param {Array} theirs - уроки выбранного учителя в этот час
+     * @param {Array} theirs - уроки выбранного учителя или класса в этот час
      * @param {Array} mineHere - ваши уроки в этот час
      * @param {boolean} together - включён ли режим "вместе со мной"
      * @returns {HTMLElement}
      */
     renderCell(theirs, mineHere, together) {
         const cell = this.el('td');
+        const isClasses = this.isClasses();
 
         if (theirs.length) {
             cell.className = 'mscp-col-busy';
-            theirs.forEach(([, , className, subject]) => {
+            theirs.forEach(([, , className, subject, teacher]) => {
                 const card = this.el('div', 'mscp-col-lesson');
-                const chip = this.el('span', 'mscp-col-class', className);
-                chip.style.background = classColor(className) || '#868e96';
-                card.append(chip, this.el('span', 'mscp-col-subject', subject));
                 card.style.borderLeftColor = this.subjectColor(subject);
-                card.title = `${className} ${subject}`;
+
+                if (isClasses) {
+                    // У класса важно, какой предмет и кто ведёт; подгруппы — отдельные карточки друг под другом
+                    card.append(this.el('span', 'mscp-col-subject-main', subject), this.el('span', 'mscp-col-teacher', teacher));
+                    card.title = [subject, teacher].filter(Boolean).join(' — ');
+                } else {
+                    // У метагрупп (потоков) названия класса нет
+                    if (className) {
+                        const chip = this.el('span', 'mscp-col-class', className);
+                        chip.style.background = classColor(className) || '#868e96';
+                        card.append(chip);
+                    }
+                    card.append(this.el('span', 'mscp-col-subject', subject));
+                    card.title = `${className} ${subject}`.trim();
+                }
+
                 cell.append(card);
             });
         } else if (together && mineHere.length) {
             cell.className = 'mscp-col-mine';
-            cell.textContent = `у вас: ${mineHere.map(lesson => lesson[2]).join(', ')}`;
+            cell.textContent = `у вас: ${mineHere.map(lesson => lesson[2]).filter(Boolean).join(', ') || 'урок'}`;
         } else {
             cell.className = together ? 'mscp-col-both' : 'mscp-col-free';
             cell.textContent = together ? '✓' : '';
@@ -3938,20 +4154,27 @@ const Colleagues = {
                 : week.fromCache ? `Из кеша, обновлено ${time}.` : `Загружено с сайта ${time}.`);
         }
         if (note) parts.push(note);
-        parts.push(together
-            ? '✓ — свободны оба. Свободно значит «нет урока в расписании».'
-            : 'Зелёное — нет урока в расписании: внеурочка и дежурства не учитываются.');
+
+        if (this.isClasses()) {
+            parts.push(together
+                ? '✓ — свободны и вы, и класс. Свободно значит «нет урока в расписании».'
+                : 'Зелёное — у класса нет урока в расписании.');
+        } else {
+            parts.push(together
+                ? '✓ — свободны оба. Свободно значит «нет урока в расписании».'
+                : 'Зелёное — у коллеги нет урока в расписании: внеурочка и дежурства не учитываются.');
+        }
 
         const clear = this.el('button', 'mscp-btn-action mscp-col-clear', 'Сбросить кеш');
-        clear.title = 'Удалить сохранённые списки и расписания. Закреплённые учителя останутся.';
+        clear.title = 'Удалить сохранённые списки и расписания. Закреплённые останутся.';
         clear.addEventListener('click', () => {
             ColleagueApi.clear();
             this.state.teachers = [];
+            this.state.classes = [];
             this.state.week = null;
             this.state.mine = null;
-            this.state.loading = true;
             this.render();
-            this.init();
+            this.loadList();
         });
 
         footer.replaceChildren(this.el('div', 'mscp-col-hint', parts.join(' ')), clear);
@@ -3992,8 +4215,31 @@ const Colleagues = {
                 border-right: 1px solid #e9ecef;
                 background: #f8f9fa;
             }
+            .mscp-col-modes {
+                display: flex;
+                margin: 12px 12px 0;
+                padding: 2px;
+                background: #e9ecef;
+                border-radius: 8px;
+            }
+            .mscp-col-mode {
+                flex: 1;
+                padding: 6px 0;
+                border: none;
+                border-radius: 6px;
+                background: none;
+                color: #495057;
+                font-size: 13px;
+                font-weight: 500;
+                cursor: pointer;
+            }
+            .mscp-col-active-mode {
+                background: white;
+                color: #333;
+                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+            }
             .mscp-col-search {
-                margin: 12px;
+                margin: 10px 12px;
                 padding: 8px 10px;
                 border: 1px solid #ced4da;
                 border-radius: 6px;
@@ -4003,6 +4249,14 @@ const Colleagues = {
                 flex: 1;
                 overflow-y: auto;
                 padding: 0 6px 12px;
+            }
+            .mscp-col-group {
+                padding: 8px 8px 2px;
+                font-size: 11px;
+                font-weight: 600;
+                text-transform: uppercase;
+                letter-spacing: 0.04em;
+                color: #868e96;
             }
             .mscp-col-item {
                 display: flex;
@@ -4145,6 +4399,9 @@ const Colleagues = {
                 border-left: 4px solid #496be8;
                 color: #333;
             }
+            .mscp-col-lesson + .mscp-col-lesson {
+                border-top: 1px solid #f1f3f5;
+            }
             .mscp-col-class {
                 flex: none;
                 padding: 1px 5px;
@@ -4152,13 +4409,22 @@ const Colleagues = {
                 color: white;
                 font-weight: 600;
             }
-            .mscp-col-subject {
+            .mscp-col-subject, .mscp-col-subject-main, .mscp-col-teacher {
                 max-width: 100%;
-                font-size: 11px;
                 overflow: hidden;
                 text-overflow: ellipsis;
                 white-space: nowrap;
             }
+            .mscp-col-subject { font-size: 11px; }
+            .mscp-col-subject-main {
+                font-weight: 600;
+                display: -webkit-box;
+                -webkit-box-orient: vertical;
+                -webkit-line-clamp: 2;
+                white-space: normal;
+                line-height: 1.2;
+            }
+            .mscp-col-teacher { font-size: 11px; color: #868e96; }
             .mscp-col-footer {
                 display: flex;
                 align-items: center;
@@ -5241,7 +5507,7 @@ function createSettingsButton() {
 }
 
 /**
- * Создаёт кнопку расписания коллег
+ * Создаёт кнопку расписания коллег и классов
  * @returns {HTMLElement} контейнер с кнопкой
  */
 function createColleaguesButton() {
@@ -5252,7 +5518,7 @@ function createColleaguesButton() {
     const button = document.createElement('button');
     button.className = 'mscp-button';
     button.innerHTML = createColleaguesIcon();
-    button.title = 'Расписание коллег';
+    button.title = 'Расписание коллег и классов';
     button.addEventListener('click', () => Colleagues.open());
     buttonContainer.appendChild(button);
 
