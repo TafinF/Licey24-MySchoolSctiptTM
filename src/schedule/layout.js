@@ -582,6 +582,8 @@ const ScheduleLayout = {
                 padding: 0 !important;
                 border: 0 !important;
                 overflow: visible !important;
+                /* Выше строки шапки расписания (у неё тоже z-index 2 и белый фон): иначе она закрывает кнопку */
+                z-index: 3 !important;
             }
             body.mscp-schedule aside:has(${cal}) *:not(${cal}):not(:has(${cal})):not(${cal} *) {
                 display: none !important;

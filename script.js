@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         My School Color Point
 // @namespace    http://tampermonkey.net/
-// @version      2026-10-29_13-30-13
+// @version      2026-10-29_14-05-38
 // @description  Окрашивает оценки в разные цвета в Моя Школа
 // @author       Tafintsev Feodor taf.f11@ya.ru
 // @match        https://authedu.mosreg.ru/*
@@ -22,7 +22,7 @@
  * Используется в Tampermonkey и отображается в меню настроек
  * Подставляется автоматически при сборке (build.sh)
  */
-const VERSION = '2026-10-29_13-30-13';
+const VERSION = '2026-10-29_14-05-38';
 
 /**
  * Основная конфигурация скрипта
@@ -2930,6 +2930,8 @@ const ScheduleLayout = {
                 padding: 0 !important;
                 border: 0 !important;
                 overflow: visible !important;
+                /* Выше строки шапки расписания (у неё тоже z-index 2 и белый фон): иначе она закрывает кнопку */
+                z-index: 3 !important;
             }
             body.mscp-schedule aside:has(${cal}) *:not(${cal}):not(:has(${cal})):not(${cal} *) {
                 display: none !important;
