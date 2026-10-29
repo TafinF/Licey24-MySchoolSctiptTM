@@ -43,7 +43,6 @@ const SchedulePage = {
         Colleagues.close();
         HomeworkDay.close();
         document.querySelector('.mscp-homework-box')?.remove();
-        ScheduleLegend.stop();
     },
 
     /**
@@ -63,8 +62,6 @@ const SchedulePage = {
             ScheduleCompact.stop();
             ScheduleLayout.start();
         }
-
-        ScheduleLegend.sync();
     },
 
     /**
@@ -88,6 +85,6 @@ const SchedulePage = {
         homework.style.marginLeft = '8px';
         const button = createSettingsButton();
         button.style.marginLeft = '8px';
-        weekSwitch.append(colleagues, homework, ScheduleLegend.createButton(), button);
+        weekSwitch.append(colleagues, homework, button);
     }
 };

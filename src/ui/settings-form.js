@@ -315,7 +315,7 @@ function createScheduleLookOptions(currentSettings) {
 
     const hint = document.createElement('div');
     hint.className = 'mscp-row-desc mscp-hint';
-    hint.textContent = 'Значки урока и домашнего задания и цвета предметов — по кнопке ⓘ рядом с настройками на странице расписания.';
+    hint.textContent = 'Значки У (оценки) и ДЗ на карточке урока: зелёный — есть, красный — нет, серый — срок ещё не вышел. Подробнее — подсказка при наведении.';
     look.appendChild(hint);
 
     return look;

@@ -6,7 +6,7 @@
  * Своё недельное расписание на странице "Расписание уроков"
  * - Карточки сайта остаются в DOM скрытыми, поверх каждой рисуется своя: время (начало и конец),
  *   класс и два статуса (урок и домашнее задание цветом сайта: зелёный / красный / серый)
- * - Название предмета выносится в легенду и обозначается цветом полоски; если предмет один, оно скрыто
+ * - Название предмета обозначается цветом полоски; если предмет один, оно скрыто
  * - Строки сетки = номера уроков, подписанные слева; номер, которого нет всю неделю, остаётся узким пропуском.
  *   Размеры подгоняются под окно и ширину столбцов
  * - Клик по карточке нажимает "К журналу" в меню оригинальной карточки
@@ -27,9 +27,6 @@ const ScheduleLayout = {
 
     /** @type {HTMLElement|null} Колонка со шкалой времени (кэш) */
     axis: null,
-
-    /** @type {Array<{subject: string, color: string}>} Предметы недели с цветами для легенды (ScheduleLegend) */
-    legend: [],
 
     /** @type {boolean} Идёт ли сейчас открытие журнала через меню сайта */
     isOpening: false,
@@ -87,7 +84,7 @@ const ScheduleLayout = {
         document.querySelector(CONFIG.SELECTORS.CALENDAR_BUTTON)?.style.removeProperty('--mscp-cal-top');
         document.querySelector('.mscp-sch-header')?.classList.remove('mscp-sch-header');
 
-        // Свои карточки и легенда вне режима не стилизованы: убираем
+        // Свои карточки вне режима не стилизованы: убираем
         this.axis = null;
         document.querySelectorAll('.mscp-card, .mscp-sch-rows').forEach(element => element.remove());
     },
@@ -156,7 +153,7 @@ const ScheduleLayout = {
             entry.data = parseLessonCard(entry.card);
         }
 
-        // Предметы: цвет полоски на карточке и запись в легенде; если предмет один, название не нужно
+        // Предметы: цвет полоски на карточке; если предмет один, название не нужно
         const subjects = [...new Set(entries.map(entry => entry.data.subject).filter(Boolean))]
             .sort((a, b) => a.localeCompare(b, 'ru'));
         const useColors = this.options.showColor && subjects.length > 1;
@@ -171,9 +168,6 @@ const ScheduleLayout = {
         }
 
         this.renderRowLabels(axis, rows.labels);
-
-        // Легенда показывается в окне настроек
-        this.legend = useColors ? subjects.map(subject => ({ subject, color: colorOf(subject) })) : [];
 
         this.placeCalendarButton();
 
@@ -345,10 +339,11 @@ const ScheduleLayout = {
         head.append(classElement);
 
         const badges = create('span', 'mscp-card-badges');
-        badges.append(
-            create('span', `mscp-badge mscp-badge-${data.journal}`, 'У'),
-            create('span', `mscp-badge mscp-badge-${data.homework}`, 'ДЗ')
-        );
+        const journalBadge = create('span', `mscp-badge mscp-badge-${data.journal}`, 'У');
+        journalBadge.title = BADGE_HINTS.journal[data.journal];
+        const homeworkBadge = create('span', `mscp-badge mscp-badge-${data.homework}`, 'ДЗ');
+        homeworkBadge.title = BADGE_HINTS.homework[data.homework];
+        badges.append(journalBadge, homeworkBadge);
         head.append(badges);
 
         element.append(head);
@@ -602,53 +597,6 @@ const ScheduleLayout = {
                 padding-top: 6px !important;
                 padding-bottom: 6px !important;
                 padding-right: 52px !important;
-            }
-
-            /* Легенда по кнопке ⓘ в шапке расписания */
-            .mscp-legend-pop {
-                position: fixed;
-                z-index: 1001;
-                max-width: 360px;
-                padding: 12px 14px;
-                background: white;
-                border-radius: 10px;
-                box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
-                font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-            }
-            .mscp-legend-title {
-                margin-bottom: 8px;
-                font-size: 13px;
-                font-weight: 600;
-                color: #111827;
-            }
-            .mscp-legend {
-                display: flex;
-                flex-wrap: wrap;
-                align-items: center;
-                gap: 6px 14px;
-                font-size: 12px;
-                color: #4b5563;
-            }
-            .mscp-legend .mscp-legend-item {
-                display: flex;
-                align-items: center;
-                gap: 5px;
-            }
-            .mscp-legend .mscp-legend-item i {
-                width: 10px;
-                height: 10px;
-                border-radius: 3px;
-            }
-            .mscp-legend .mscp-legend-key {
-                display: flex;
-                flex-wrap: wrap;
-                align-items: center;
-                gap: 6px;
-            }
-            .mscp-legend .mscp-badge {
-                font-size: 11px;
-                padding: 3px 6px;
-                border-radius: 5px;
             }
 
             /* Меню оригинальной карточки скрыто, пока оно нужно только для кнопки "К журналу" */

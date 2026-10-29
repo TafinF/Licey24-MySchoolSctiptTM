@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         My School Color Point
 // @namespace    http://tampermonkey.net/
-// @version      2026-10-29_16-40-49
+// @version      2026-10-29_17-14-55
 // @description  Окрашивает оценки в разные цвета в Моя Школа
 // @author       Tafintsev Feodor taf.f11@ya.ru
 // @match        https://authedu.mosreg.ru/*
@@ -22,7 +22,7 @@
  * Используется в Tampermonkey и отображается в меню настроек
  * Подставляется автоматически при сборке (build.sh)
  */
-const VERSION = '2026-10-29_16-40-49';
+const VERSION = '2026-10-29_17-14-55';
 
 /**
  * Основная конфигурация скрипта
@@ -2454,6 +2454,12 @@ function lessonNumberFromStart(hours, minutes) {
     return best + 1;
 }
 
+/** Подсказки к значкам "У" (оценки в журнале) и "ДЗ" на карточке урока по статусу из lessonStatusFromColor() */
+const BADGE_HINTS = {
+    journal: { done: 'Оценки выставлены', late: 'Нет ни одной оценки', wait: 'Оценок пока нет, срок ещё не вышел' },
+    homework: { done: 'ДЗ выдано', late: 'ДЗ не выдано', wait: 'ДЗ пока не выдано, срок ещё не вышел' }
+};
+
 /**
  * Определяет статус значка урока или ДЗ по цвету иконки на сайте
  * @param {string} color - цвет в формате "rgb(r, g, b)"
@@ -2529,7 +2535,7 @@ function parseLessonCard(card) {
  * Своё недельное расписание на странице "Расписание уроков"
  * - Карточки сайта остаются в DOM скрытыми, поверх каждой рисуется своя: время (начало и конец),
  *   класс и два статуса (урок и домашнее задание цветом сайта: зелёный / красный / серый)
- * - Название предмета выносится в легенду и обозначается цветом полоски; если предмет один, оно скрыто
+ * - Название предмета обозначается цветом полоски; если предмет один, оно скрыто
  * - Строки сетки = номера уроков, подписанные слева; номер, которого нет всю неделю, остаётся узким пропуском.
  *   Размеры подгоняются под окно и ширину столбцов
  * - Клик по карточке нажимает "К журналу" в меню оригинальной карточки
@@ -2550,9 +2556,6 @@ const ScheduleLayout = {
 
     /** @type {HTMLElement|null} Колонка со шкалой времени (кэш) */
     axis: null,
-
-    /** @type {Array<{subject: string, color: string}>} Предметы недели с цветами для легенды (ScheduleLegend) */
-    legend: [],
 
     /** @type {boolean} Идёт ли сейчас открытие журнала через меню сайта */
     isOpening: false,
@@ -2610,7 +2613,7 @@ const ScheduleLayout = {
         document.querySelector(CONFIG.SELECTORS.CALENDAR_BUTTON)?.style.removeProperty('--mscp-cal-top');
         document.querySelector('.mscp-sch-header')?.classList.remove('mscp-sch-header');
 
-        // Свои карточки и легенда вне режима не стилизованы: убираем
+        // Свои карточки вне режима не стилизованы: убираем
         this.axis = null;
         document.querySelectorAll('.mscp-card, .mscp-sch-rows').forEach(element => element.remove());
     },
@@ -2679,7 +2682,7 @@ const ScheduleLayout = {
             entry.data = parseLessonCard(entry.card);
         }
 
-        // Предметы: цвет полоски на карточке и запись в легенде; если предмет один, название не нужно
+        // Предметы: цвет полоски на карточке; если предмет один, название не нужно
         const subjects = [...new Set(entries.map(entry => entry.data.subject).filter(Boolean))]
             .sort((a, b) => a.localeCompare(b, 'ru'));
         const useColors = this.options.showColor && subjects.length > 1;
@@ -2694,9 +2697,6 @@ const ScheduleLayout = {
         }
 
         this.renderRowLabels(axis, rows.labels);
-
-        // Легенда показывается в окне настроек
-        this.legend = useColors ? subjects.map(subject => ({ subject, color: colorOf(subject) })) : [];
 
         this.placeCalendarButton();
 
@@ -2868,10 +2868,11 @@ const ScheduleLayout = {
         head.append(classElement);
 
         const badges = create('span', 'mscp-card-badges');
-        badges.append(
-            create('span', `mscp-badge mscp-badge-${data.journal}`, 'У'),
-            create('span', `mscp-badge mscp-badge-${data.homework}`, 'ДЗ')
-        );
+        const journalBadge = create('span', `mscp-badge mscp-badge-${data.journal}`, 'У');
+        journalBadge.title = BADGE_HINTS.journal[data.journal];
+        const homeworkBadge = create('span', `mscp-badge mscp-badge-${data.homework}`, 'ДЗ');
+        homeworkBadge.title = BADGE_HINTS.homework[data.homework];
+        badges.append(journalBadge, homeworkBadge);
         head.append(badges);
 
         element.append(head);
@@ -3125,53 +3126,6 @@ const ScheduleLayout = {
                 padding-top: 6px !important;
                 padding-bottom: 6px !important;
                 padding-right: 52px !important;
-            }
-
-            /* Легенда по кнопке ⓘ в шапке расписания */
-            .mscp-legend-pop {
-                position: fixed;
-                z-index: 1001;
-                max-width: 360px;
-                padding: 12px 14px;
-                background: white;
-                border-radius: 10px;
-                box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
-                font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-            }
-            .mscp-legend-title {
-                margin-bottom: 8px;
-                font-size: 13px;
-                font-weight: 600;
-                color: #111827;
-            }
-            .mscp-legend {
-                display: flex;
-                flex-wrap: wrap;
-                align-items: center;
-                gap: 6px 14px;
-                font-size: 12px;
-                color: #4b5563;
-            }
-            .mscp-legend .mscp-legend-item {
-                display: flex;
-                align-items: center;
-                gap: 5px;
-            }
-            .mscp-legend .mscp-legend-item i {
-                width: 10px;
-                height: 10px;
-                border-radius: 3px;
-            }
-            .mscp-legend .mscp-legend-key {
-                display: flex;
-                flex-wrap: wrap;
-                align-items: center;
-                gap: 6px;
-            }
-            .mscp-legend .mscp-badge {
-                font-size: 11px;
-                padding: 3px 6px;
-                border-radius: 5px;
             }
 
             /* Меню оригинальной карточки скрыто, пока оно нужно только для кнопки "К журналу" */
@@ -4399,10 +4353,10 @@ const HomeworkApi = {
 
 /**
  * Окно "ДЗ на день"
- * - Показывает уроки выбранного дня (по умолчанию сегодня): время, класс, предмет, поле для текста ДЗ и срок сдачи
- * - Срок сдачи по умолчанию — ближайший следующий урок этой группы; его можно поменять
+ * - Показывает уроки выбранного дня (по умолчанию сегодня): время, класс, предмет и поле для текста ДЗ
+ * - Срок сдачи — ближайший следующий урок этой группы, время выполнения — DEFAULT_DURATION; изменить их в окне нельзя
  * - "Выдать" отправляет ДЗ только по урокам с заполненным текстом, по одному запросу на урок, и показывает результат у каждого
- * - Сайт не принимает выдачу задним числом, поэтому для прошедших дней кнопка отключена
+ * - Сайт не принимает выдачу задним числом, поэтому листать назад раньше сегодняшнего дня нельзя
  * - Уже выданное на уроке ДЗ показывается справкой и не перезаписывается: новый текст создаёт ещё одно ДЗ
  */
 const HomeworkDay = {
@@ -4442,7 +4396,7 @@ const HomeworkDay = {
                     <button class="mscp-close-btn">&times;</button>
                 </div>
                 <div class="mscp-hw-toolbar">
-                    <button class="mscp-hw-nav" data-step="-1" title="Предыдущий день">&lsaquo;</button>
+                    <button class="mscp-hw-nav mscp-hw-prev" data-step="-1" title="Предыдущий день">&lsaquo;</button>
                     <input type="date" class="mscp-hw-date">
                     <button class="mscp-hw-nav" data-step="1" title="Следующий день">&rsaquo;</button>
                     <span class="mscp-hw-weekday"></span>
@@ -4457,8 +4411,10 @@ const HomeworkDay = {
 
         const dateInput = this.overlay.querySelector('.mscp-hw-date');
         dateInput.value = this.state.iso;
+        dateInput.min = this.state.iso;
         dateInput.addEventListener('change', () => {
-            if (dateInput.value) this.setDay(dateInput.value);
+            if (dateInput.value && dateInput.value >= dateInput.min) this.setDay(dateInput.value);
+            else dateInput.value = this.state.iso;
         });
         this.overlay.querySelectorAll('.mscp-hw-nav').forEach(button => {
             button.addEventListener('click', () => this.shiftDay(Number(button.dataset.step)));
@@ -4495,7 +4451,7 @@ const HomeworkDay = {
      * @returns {void}
      */
     setDay(iso) {
-        if (this.state.sending) return;
+        if (this.state.sending || iso < ColleagueApi.isoDate(new Date())) return;
 
         this.state.iso = iso;
         this.overlay.querySelector('.mscp-hw-date').value = iso;
@@ -4540,7 +4496,6 @@ const HomeworkDay = {
                 existingCount: lesson.existingIds.length,
                 text: '',
                 due: next[lesson.groupId] ?? '',
-                duration: this.DEFAULT_DURATION,
                 status: '',
                 message: ''
             }));
@@ -4562,11 +4517,11 @@ const HomeworkDay = {
     },
 
     /**
-     * Уроки, по которым введён текст и которые ещё не выданы в этом окне
+     * Уроки, по которым введён текст и которые ещё не выданы в этом окне; без следующего урока группы срока сдачи нет
      * @returns {Array}
      */
     pending() {
-        return this.state.lessons.filter(lesson => lesson.ready && lesson.text.trim() && lesson.status !== 'ok');
+        return this.state.lessons.filter(lesson => lesson.ready && lesson.due && lesson.text.trim() && lesson.status !== 'ok');
     },
 
     /**
@@ -4580,6 +4535,7 @@ const HomeworkDay = {
         const [year, month, day] = iso.split('-').map(Number);
         this.overlay.querySelector('.mscp-hw-weekday').textContent =
             new Date(year, month - 1, day).toLocaleDateString('ru-RU', { weekday: 'long' });
+        this.overlay.querySelector('.mscp-hw-prev').disabled = iso <= ColleagueApi.isoDate(new Date());
 
         const list = this.overlay.querySelector('.mscp-hw-list');
         list.replaceChildren();
@@ -4642,7 +4598,7 @@ const HomeworkDay = {
         text.rows = 2;
         text.placeholder = 'Текст домашнего задания (пусто — не выдавать)';
         text.value = lesson.text;
-        text.disabled = this.state.sending;
+        text.disabled = this.state.sending || !lesson.due;
         text.addEventListener('input', () => {
             lesson.text = text.value;
             if (lesson.status === 'error') {
@@ -4654,36 +4610,13 @@ const HomeworkDay = {
             this.renderFooter();
         });
 
-        const options = document.createElement('div');
-        options.className = 'mscp-hw-options';
+        const due = document.createElement('div');
+        due.className = 'mscp-hw-hint';
+        due.textContent = lesson.due
+            ? `Срок сдачи — следующий урок: ${HomeworkApi.siteDate(lesson.due).slice(0, 5)}`
+            : 'Следующий урок группы в ближайшие недели не найден: выдайте ДЗ в журнале.';
 
-        const dueLabel = document.createElement('label');
-        dueLabel.textContent = 'Срок сдачи ';
-        const due = document.createElement('input');
-        due.type = 'date';
-        due.value = lesson.due;
-        due.disabled = this.state.sending;
-        due.addEventListener('change', () => {
-            lesson.due = due.value;
-            this.renderFooter();
-        });
-        dueLabel.append(due);
-
-        const durationLabel = document.createElement('label');
-        durationLabel.textContent = 'Время, мин ';
-        const duration = document.createElement('input');
-        duration.type = 'number';
-        duration.min = '1';
-        duration.max = '180';
-        duration.value = String(lesson.duration);
-        duration.disabled = this.state.sending;
-        duration.addEventListener('input', () => {
-            lesson.duration = Number(duration.value) || this.DEFAULT_DURATION;
-        });
-        durationLabel.append(duration);
-
-        options.append(dueLabel, durationLabel);
-        row.append(text, options);
+        row.append(text, due);
         return row;
     },
 
@@ -4696,18 +4629,16 @@ const HomeworkDay = {
 
         const { sending, lessons } = this.state;
         const pending = this.pending();
-        const missingDue = pending.filter(lesson => !lesson.due || lesson.due < this.state.iso).length;
         const canAssign = this.canAssign();
 
         let summary = 'Заполните ДЗ хотя бы по одному уроку.';
         if (!canAssign) summary = 'Сайт не принимает выдачу ДЗ за прошедшие дни.';
-        else if (missingDue) summary = 'Укажите срок сдачи не раньше дня урока.';
         else if (sending) summary = 'Отправка...';
         else if (pending.length) summary = `Будет выдано ДЗ: ${pending.length}`;
         else if (lessons.some(lesson => lesson.status === 'ok')) summary = 'Готово. Можно выдать ещё.';
 
         this.overlay.querySelector('.mscp-hw-summary').textContent = summary;
-        this.overlay.querySelector('.mscp-hw-send').disabled = sending || !canAssign || !pending.length || missingDue > 0;
+        this.overlay.querySelector('.mscp-hw-send').disabled = sending || !canAssign || !pending.length;
     },
 
     /**
@@ -4736,7 +4667,7 @@ const HomeworkDay = {
             this.render();
 
             try {
-                const created = await HomeworkApi.createHomework(lesson, lesson.text.trim(), state.iso, lesson.due, lesson.duration);
+                const created = await HomeworkApi.createHomework(lesson, lesson.text.trim(), state.iso, lesson.due, this.DEFAULT_DURATION);
                 lesson.status = 'ok';
                 lesson.message = 'выдано';
                 lesson.existing.push(lesson.text.trim());
@@ -4799,13 +4730,13 @@ const HomeworkDay = {
                 cursor: pointer;
             }
             .mscp-hw-nav:hover { background: #ececec; }
-            .mscp-hw-date, .mscp-hw-options input {
+            .mscp-hw-nav:disabled { opacity: 0.4; cursor: default; background: white; }
+            .mscp-hw-date {
                 padding: 5px 8px;
                 border: 1px solid #ced4da;
                 border-radius: 6px;
                 font-size: 13px;
             }
-            .mscp-hw-options input[type="number"] { width: 64px; }
             .mscp-hw-weekday {
                 font-size: 13px;
                 color: #868e96;
@@ -4857,14 +4788,7 @@ const HomeworkDay = {
                 font-size: 13px;
                 resize: vertical;
             }
-            .mscp-hw-options {
-                display: flex;
-                gap: 16px;
-                margin-top: 6px;
-                font-size: 12px;
-                color: #495057;
-            }
-            .mscp-hw-hint { font-size: 12px; color: #868e96; }
+            .mscp-hw-hint { margin-top: 6px; font-size: 12px; color: #868e96; }
             .mscp-hw-footer {
                 flex: none;
                 display: flex;
@@ -4888,154 +4812,6 @@ const HomeworkDay = {
             .mscp-hw-send:disabled { background: #adb5bd; cursor: default; }
         `;
         document.head.appendChild(style);
-    }
-};
-
-
-// ============================================================
-// ЛЕГЕНДА РАСПИСАНИЯ
-// ============================================================
-
-/**
- * Кнопка ⓘ рядом с настройками на странице расписания и всплывающая легенда заменённого расписания:
- * цвета предметов и значение значков урока и домашнего задания
- * Кнопка видна, только пока включено заменённое расписание
- */
-const ScheduleLegend = {
-    /** @type {HTMLElement|null} Открытая легенда */
-    popup: null,
-
-    /**
-     * Создаёт кнопку легенды
-     * @returns {HTMLElement} контейнер с кнопкой
-     */
-    createButton() {
-        const box = document.createElement('div');
-        box.className = 'mscp-legend-box';
-        box.style.cssText = 'box-shadow: 1px 1px 4px 0px rgba(0, 0, 0, 0.07); border-radius: 8px; display: inline-flex; margin-left: 8px;';
-
-        const button = document.createElement('button');
-        button.className = 'mscp-button';
-        button.innerHTML = createInfoIcon();
-        button.title = 'Обозначения в расписании';
-        button.addEventListener('click', event => {
-            event.stopPropagation();
-            this.toggle(box);
-        });
-        box.appendChild(button);
-
-        this.sync(box);
-        return box;
-    },
-
-    /**
-     * Показывает кнопку только при заменённом расписании; при другом виде закрывает легенду
-     * @param {HTMLElement} [box] - контейнер кнопки; по умолчанию найденный на странице
-     * @returns {void}
-     */
-    sync(box = document.querySelector('.mscp-legend-box')) {
-        if (!box) return;
-
-        const isCustom = loadSettings().scheduleStyle === 'custom';
-        box.style.display = isCustom ? 'inline-flex' : 'none';
-        if (!isCustom) this.close();
-    },
-
-    /**
-     * Убирает кнопку и легенду
-     * @returns {void}
-     */
-    stop() {
-        this.close();
-        document.querySelector('.mscp-legend-box')?.remove();
-    },
-
-    /**
-     * Открывает легенду под кнопкой или закрывает, если она уже открыта
-     * @param {HTMLElement} anchor - контейнер кнопки, под которым появляется легенда
-     * @returns {void}
-     */
-    toggle(anchor) {
-        if (this.popup) {
-            this.close();
-            return;
-        }
-
-        const popup = document.createElement('div');
-        popup.className = 'mscp-legend-pop';
-        popup.append(this.build());
-
-        const rect = anchor.getBoundingClientRect();
-        popup.style.top = `${Math.round(rect.bottom + 8)}px`;
-        popup.style.left = `${Math.max(8, Math.min(Math.round(rect.left), window.innerWidth - 376))}px`;
-
-        document.body.appendChild(popup);
-        this.popup = popup;
-
-        // Закрытие по клику вне легенды и по Escape; обработчики снимаются вместе с легендой
-        setTimeout(() => {
-            document.addEventListener('click', this.onOutside);
-            document.addEventListener('keydown', this.onKey);
-        });
-    },
-
-    /**
-     * Закрывает легенду
-     * @returns {void}
-     */
-    close() {
-        this.popup?.remove();
-        this.popup = null;
-        document.removeEventListener('click', this.onOutside);
-        document.removeEventListener('keydown', this.onKey);
-    },
-
-    /** Клик вне легенды закрывает её */
-    onOutside: event => {
-        if (!ScheduleLegend.popup?.contains(event.target)) ScheduleLegend.close();
-    },
-
-    /** Escape закрывает легенду */
-    onKey: event => {
-        if (event.key === 'Escape') ScheduleLegend.close();
-    },
-
-    /**
-     * Строит содержимое легенды: цвета предметов недели и значение значков
-     * @returns {DocumentFragment} содержимое легенды
-     */
-    build() {
-        const fragment = document.createDocumentFragment();
-
-        const title = document.createElement('div');
-        title.className = 'mscp-legend-title';
-        title.textContent = 'Обозначения в расписании';
-
-        const legend = document.createElement('div');
-        legend.className = 'mscp-legend';
-
-        for (const { subject, color } of ScheduleLayout.legend) {
-            const item = document.createElement('span');
-            item.className = 'mscp-legend-item';
-            const swatch = document.createElement('i');
-            swatch.style.background = color;
-            item.append(swatch, subject);
-            legend.append(item);
-        }
-
-        const key = document.createElement('span');
-        key.className = 'mscp-legend-key';
-        key.append('У — урок, ДЗ — домашнее задание:');
-        for (const [status, text] of [['done', 'заполнено'], ['late', 'не заполнено'], ['wait', 'ещё нет']]) {
-            const badge = document.createElement('span');
-            badge.className = `mscp-badge mscp-badge-${status}`;
-            badge.textContent = text;
-            key.append(badge);
-        }
-        legend.append(key);
-
-        fragment.append(title, legend);
-        return fragment;
     }
 };
 
@@ -5085,7 +4861,6 @@ const SchedulePage = {
         Colleagues.close();
         HomeworkDay.close();
         document.querySelector('.mscp-homework-box')?.remove();
-        ScheduleLegend.stop();
     },
 
     /**
@@ -5105,8 +4880,6 @@ const SchedulePage = {
             ScheduleCompact.stop();
             ScheduleLayout.start();
         }
-
-        ScheduleLegend.sync();
     },
 
     /**
@@ -5130,7 +4903,7 @@ const SchedulePage = {
         homework.style.marginLeft = '8px';
         const button = createSettingsButton();
         button.style.marginLeft = '8px';
-        weekSwitch.append(colleagues, homework, ScheduleLegend.createButton(), button);
+        weekSwitch.append(colleagues, homework, button);
     }
 };
 
@@ -5163,20 +4936,6 @@ function createHomeworkIcon() {
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#909090" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M11 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"></path>
             <path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"></path>
-        </svg>
-    `;
-}
-
-/**
- * Создаёт SVG-иконку легенды расписания (буква i в круге)
- * @returns {string} HTML-строка с SVG-элементом
- */
-function createInfoIcon() {
-    return `
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#909090" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="9.5"></circle>
-            <path d="M12 11v6"></path>
-            <circle cx="12" cy="7.5" r="0.6" fill="#909090"></circle>
         </svg>
     `;
 }
@@ -5688,7 +5447,7 @@ function createScheduleLookOptions(currentSettings) {
 
     const hint = document.createElement('div');
     hint.className = 'mscp-row-desc mscp-hint';
-    hint.textContent = 'Значки урока и домашнего задания и цвета предметов — по кнопке ⓘ рядом с настройками на странице расписания.';
+    hint.textContent = 'Значки У (оценки) и ДЗ на карточке урока: зелёный — есть, красный — нет, серый — срок ещё не вышел. Подробнее — подсказка при наведении.';
     look.appendChild(hint);
 
     return look;

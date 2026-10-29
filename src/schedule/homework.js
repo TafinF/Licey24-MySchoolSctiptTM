@@ -4,10 +4,10 @@
 
 /**
  * Окно "ДЗ на день"
- * - Показывает уроки выбранного дня (по умолчанию сегодня): время, класс, предмет, поле для текста ДЗ и срок сдачи
- * - Срок сдачи по умолчанию — ближайший следующий урок этой группы; его можно поменять
+ * - Показывает уроки выбранного дня (по умолчанию сегодня): время, класс, предмет и поле для текста ДЗ
+ * - Срок сдачи — ближайший следующий урок этой группы, время выполнения — DEFAULT_DURATION; изменить их в окне нельзя
  * - "Выдать" отправляет ДЗ только по урокам с заполненным текстом, по одному запросу на урок, и показывает результат у каждого
- * - Сайт не принимает выдачу задним числом, поэтому для прошедших дней кнопка отключена
+ * - Сайт не принимает выдачу задним числом, поэтому листать назад раньше сегодняшнего дня нельзя
  * - Уже выданное на уроке ДЗ показывается справкой и не перезаписывается: новый текст создаёт ещё одно ДЗ
  */
 const HomeworkDay = {
@@ -47,7 +47,7 @@ const HomeworkDay = {
                     <button class="mscp-close-btn">&times;</button>
                 </div>
                 <div class="mscp-hw-toolbar">
-                    <button class="mscp-hw-nav" data-step="-1" title="Предыдущий день">&lsaquo;</button>
+                    <button class="mscp-hw-nav mscp-hw-prev" data-step="-1" title="Предыдущий день">&lsaquo;</button>
                     <input type="date" class="mscp-hw-date">
                     <button class="mscp-hw-nav" data-step="1" title="Следующий день">&rsaquo;</button>
                     <span class="mscp-hw-weekday"></span>
@@ -62,8 +62,10 @@ const HomeworkDay = {
 
         const dateInput = this.overlay.querySelector('.mscp-hw-date');
         dateInput.value = this.state.iso;
+        dateInput.min = this.state.iso;
         dateInput.addEventListener('change', () => {
-            if (dateInput.value) this.setDay(dateInput.value);
+            if (dateInput.value && dateInput.value >= dateInput.min) this.setDay(dateInput.value);
+            else dateInput.value = this.state.iso;
         });
         this.overlay.querySelectorAll('.mscp-hw-nav').forEach(button => {
             button.addEventListener('click', () => this.shiftDay(Number(button.dataset.step)));
@@ -100,7 +102,7 @@ const HomeworkDay = {
      * @returns {void}
      */
     setDay(iso) {
-        if (this.state.sending) return;
+        if (this.state.sending || iso < ColleagueApi.isoDate(new Date())) return;
 
         this.state.iso = iso;
         this.overlay.querySelector('.mscp-hw-date').value = iso;
@@ -145,7 +147,6 @@ const HomeworkDay = {
                 existingCount: lesson.existingIds.length,
                 text: '',
                 due: next[lesson.groupId] ?? '',
-                duration: this.DEFAULT_DURATION,
                 status: '',
                 message: ''
             }));
@@ -167,11 +168,11 @@ const HomeworkDay = {
     },
 
     /**
-     * Уроки, по которым введён текст и которые ещё не выданы в этом окне
+     * Уроки, по которым введён текст и которые ещё не выданы в этом окне; без следующего урока группы срока сдачи нет
      * @returns {Array}
      */
     pending() {
-        return this.state.lessons.filter(lesson => lesson.ready && lesson.text.trim() && lesson.status !== 'ok');
+        return this.state.lessons.filter(lesson => lesson.ready && lesson.due && lesson.text.trim() && lesson.status !== 'ok');
     },
 
     /**
@@ -185,6 +186,7 @@ const HomeworkDay = {
         const [year, month, day] = iso.split('-').map(Number);
         this.overlay.querySelector('.mscp-hw-weekday').textContent =
             new Date(year, month - 1, day).toLocaleDateString('ru-RU', { weekday: 'long' });
+        this.overlay.querySelector('.mscp-hw-prev').disabled = iso <= ColleagueApi.isoDate(new Date());
 
         const list = this.overlay.querySelector('.mscp-hw-list');
         list.replaceChildren();
@@ -247,7 +249,7 @@ const HomeworkDay = {
         text.rows = 2;
         text.placeholder = 'Текст домашнего задания (пусто — не выдавать)';
         text.value = lesson.text;
-        text.disabled = this.state.sending;
+        text.disabled = this.state.sending || !lesson.due;
         text.addEventListener('input', () => {
             lesson.text = text.value;
             if (lesson.status === 'error') {
@@ -259,36 +261,13 @@ const HomeworkDay = {
             this.renderFooter();
         });
 
-        const options = document.createElement('div');
-        options.className = 'mscp-hw-options';
+        const due = document.createElement('div');
+        due.className = 'mscp-hw-hint';
+        due.textContent = lesson.due
+            ? `Срок сдачи — следующий урок: ${HomeworkApi.siteDate(lesson.due).slice(0, 5)}`
+            : 'Следующий урок группы в ближайшие недели не найден: выдайте ДЗ в журнале.';
 
-        const dueLabel = document.createElement('label');
-        dueLabel.textContent = 'Срок сдачи ';
-        const due = document.createElement('input');
-        due.type = 'date';
-        due.value = lesson.due;
-        due.disabled = this.state.sending;
-        due.addEventListener('change', () => {
-            lesson.due = due.value;
-            this.renderFooter();
-        });
-        dueLabel.append(due);
-
-        const durationLabel = document.createElement('label');
-        durationLabel.textContent = 'Время, мин ';
-        const duration = document.createElement('input');
-        duration.type = 'number';
-        duration.min = '1';
-        duration.max = '180';
-        duration.value = String(lesson.duration);
-        duration.disabled = this.state.sending;
-        duration.addEventListener('input', () => {
-            lesson.duration = Number(duration.value) || this.DEFAULT_DURATION;
-        });
-        durationLabel.append(duration);
-
-        options.append(dueLabel, durationLabel);
-        row.append(text, options);
+        row.append(text, due);
         return row;
     },
 
@@ -301,18 +280,16 @@ const HomeworkDay = {
 
         const { sending, lessons } = this.state;
         const pending = this.pending();
-        const missingDue = pending.filter(lesson => !lesson.due || lesson.due < this.state.iso).length;
         const canAssign = this.canAssign();
 
         let summary = 'Заполните ДЗ хотя бы по одному уроку.';
         if (!canAssign) summary = 'Сайт не принимает выдачу ДЗ за прошедшие дни.';
-        else if (missingDue) summary = 'Укажите срок сдачи не раньше дня урока.';
         else if (sending) summary = 'Отправка...';
         else if (pending.length) summary = `Будет выдано ДЗ: ${pending.length}`;
         else if (lessons.some(lesson => lesson.status === 'ok')) summary = 'Готово. Можно выдать ещё.';
 
         this.overlay.querySelector('.mscp-hw-summary').textContent = summary;
-        this.overlay.querySelector('.mscp-hw-send').disabled = sending || !canAssign || !pending.length || missingDue > 0;
+        this.overlay.querySelector('.mscp-hw-send').disabled = sending || !canAssign || !pending.length;
     },
 
     /**
@@ -341,7 +318,7 @@ const HomeworkDay = {
             this.render();
 
             try {
-                const created = await HomeworkApi.createHomework(lesson, lesson.text.trim(), state.iso, lesson.due, lesson.duration);
+                const created = await HomeworkApi.createHomework(lesson, lesson.text.trim(), state.iso, lesson.due, this.DEFAULT_DURATION);
                 lesson.status = 'ok';
                 lesson.message = 'выдано';
                 lesson.existing.push(lesson.text.trim());
@@ -404,13 +381,13 @@ const HomeworkDay = {
                 cursor: pointer;
             }
             .mscp-hw-nav:hover { background: #ececec; }
-            .mscp-hw-date, .mscp-hw-options input {
+            .mscp-hw-nav:disabled { opacity: 0.4; cursor: default; background: white; }
+            .mscp-hw-date {
                 padding: 5px 8px;
                 border: 1px solid #ced4da;
                 border-radius: 6px;
                 font-size: 13px;
             }
-            .mscp-hw-options input[type="number"] { width: 64px; }
             .mscp-hw-weekday {
                 font-size: 13px;
                 color: #868e96;
@@ -462,14 +439,7 @@ const HomeworkDay = {
                 font-size: 13px;
                 resize: vertical;
             }
-            .mscp-hw-options {
-                display: flex;
-                gap: 16px;
-                margin-top: 6px;
-                font-size: 12px;
-                color: #495057;
-            }
-            .mscp-hw-hint { font-size: 12px; color: #868e96; }
+            .mscp-hw-hint { margin-top: 6px; font-size: 12px; color: #868e96; }
             .mscp-hw-footer {
                 flex: none;
                 display: flex;

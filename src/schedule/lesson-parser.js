@@ -29,6 +29,12 @@ function lessonNumberFromStart(hours, minutes) {
     return best + 1;
 }
 
+/** Подсказки к значкам "У" (оценки в журнале) и "ДЗ" на карточке урока по статусу из lessonStatusFromColor() */
+const BADGE_HINTS = {
+    journal: { done: 'Оценки выставлены', late: 'Нет ни одной оценки', wait: 'Оценок пока нет, срок ещё не вышел' },
+    homework: { done: 'ДЗ выдано', late: 'ДЗ не выдано', wait: 'ДЗ пока не выдано, срок ещё не вышел' }
+};
+
 /**
  * Определяет статус значка урока или ДЗ по цвету иконки на сайте
  * @param {string} color - цвет в формате "rgb(r, g, b)"

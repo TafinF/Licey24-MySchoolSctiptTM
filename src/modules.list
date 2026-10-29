@@ -28,7 +28,6 @@ schedule/colleagues-api.js
 schedule/colleagues.js
 schedule/homework-api.js
 schedule/homework.js
-schedule/legend.js
 schedule/page.js
 
 ui/icons.js
