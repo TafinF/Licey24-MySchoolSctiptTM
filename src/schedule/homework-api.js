@@ -180,6 +180,91 @@ const HomeworkApi = {
     },
 
     /**
+     * Сколько оценок стоит на каждом уроке дня; удалённые оценки не считаются
+     * @param {number[]} groupIds
+     * @param {string} iso - день в виде ГГГГ-ММ-ДД
+     * @returns {Promise<Object<number, number>>} {id урока: число оценок}; уроки без оценок не попадают
+     * @throws {Error} если сайт не ответил: тогда "нет оценок" утверждать нельзя
+     */
+    async getMarkCounts(groupIds, iso) {
+        if (!groupIds.length) return {};
+
+        const date = this.siteDate(iso);
+        const perPage = 300;
+        const counts = {};
+
+        for (let page = 1; ; page++) {
+            const marks = await ColleagueApi.get('/core/teacher/v1/marks', {
+                group_ids: groupIds.join(','), lesson_date_from: date, lesson_date_to: date,
+                with_non_numeric_entries: true, per_page: perPage, page
+            });
+
+            marks.filter(mark => !mark.deleted_by).forEach(mark => {
+                counts[mark.schedule_lesson_id] = (counts[mark.schedule_lesson_id] ?? 0) + 1;
+            });
+            if (marks.length < perPage) return counts;
+        }
+    },
+
+    /**
+     * Сколько комментариев к ученикам уже стоит на каждом уроке
+     * @param {number[]} lessonIds
+     * @returns {Promise<Object<number, number>>} {id урока: число комментариев}
+     * @throws {Error} если сайт не ответил
+     */
+    async getCommentCounts(lessonIds) {
+        const chunk = 50;
+        const counts = {};
+
+        for (let start = 0; start < lessonIds.length; start += chunk) {
+            const comments = await ColleagueApi.get('/core/teacher/v1/lesson_comments', {
+                schedule_lesson_ids: lessonIds.slice(start, start + chunk).join(','), page: 1, per_page: 1000
+            });
+            comments.forEach(comment => {
+                counts[comment.schedule_lesson_id] = (counts[comment.schedule_lesson_id] ?? 0) + 1;
+            });
+        }
+
+        return counts;
+    },
+
+    /**
+     * Фамилия и имя ученика для сообщения о результате; справка, поэтому сбой не ошибка
+     * @param {Object} lesson - урок из getDay()
+     * @param {number} studentId
+     * @returns {Promise<string>} "Фамилия Имя" или пустая строка
+     */
+    async getStudentName(lesson, studentId) {
+        try {
+            const profiles = await ColleagueApi.get('/core/teacher/v1/student_profiles', {
+                academic_year_id: ColleagueApi.session()?.year, group_ids: lesson.groupId,
+                with_groups: true, per_page: 150, page: 1
+            });
+            return profiles.find(profile => profile.id === studentId)?.short_name ?? '';
+        } catch (error) {
+            console.error('Не удалось получить имя ученика:', error);
+            return '';
+        }
+    },
+
+    /**
+     * Ставит комментарий ученику на уроке
+     * @param {Object} lesson - урок из getDay()
+     * @param {number} studentId
+     * @param {string} text - текст комментария
+     * @returns {Promise<Object>} созданный комментарий
+     */
+    createComment(lesson, studentId, text) {
+        return this.post('/core/teacher/v1/lesson_comments', {
+            comment: text,
+            student_id: studentId,
+            schedule_lesson_id: lesson.id,
+            teacher_id: ColleagueApi.session()?.profile,
+            subject_id: lesson.subjectId
+        });
+    },
+
+    /**
      * Выдаёт ДЗ на уроке
      * @param {Object} lesson - урок из getDay()
      * @param {string} text - текст ДЗ

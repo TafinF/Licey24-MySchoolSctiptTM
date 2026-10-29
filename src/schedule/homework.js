@@ -7,12 +7,16 @@
  * - Показывает уроки выбранного дня (по умолчанию сегодня): время, класс, предмет и поле для текста ДЗ
  * - Срок сдачи — ближайший следующий урок этой группы, время выполнения — DEFAULT_DURATION; изменить их в окне нельзя
  * - "Выдать" отправляет ДЗ только по урокам с заполненным текстом, по одному запросу на урок, и показывает результат у каждого
- * - Сайт не принимает выдачу задним числом, поэтому листать назад раньше сегодняшнего дня нельзя
+ * - Сайт не принимает выдачу задним числом, поэтому листать назад раньше сегодняшнего дня нельзя (на обеих вкладках)
  * - Уже выданное на уроке ДЗ показывается справкой и не перезаписывается: новый текст создаёт ещё одно ДЗ
+ * - Вкладка "Комментарии": на каждый отмеченный урок без оценок ставится один комментарий случайному ученику группы
  */
 const HomeworkDay = {
     /** Срок выполнения по умолчанию, минут */
     DEFAULT_DURATION: 15,
+
+    /** Комментарий по умолчанию: невидимый символ (U+3164), сайт принимает его как текст */
+    DEFAULT_COMMENT: 'ㅤ',
 
     /** @type {HTMLElement|null} Оверлей открытого окна */
     overlay: null,
@@ -36,15 +40,22 @@ const HomeworkDay = {
         createStyles();
         this.addStyles();
 
-        this.state = { iso: ColleagueApi.isoDate(new Date()), lessons: [], loading: true, sending: false, error: '' };
+        this.state = {
+            iso: ColleagueApi.isoDate(new Date()), tab: 'homework', commentText: this.DEFAULT_COMMENT,
+            lessons: [], loading: true, sending: false, error: ''
+        };
 
         this.overlay = document.createElement('div');
         this.overlay.className = 'mscp-modal-overlay';
         this.overlay.innerHTML = `
             <div class="mscp-hw-window">
                 <div class="mscp-modal-header">
-                    <h2 class="mscp-modal-title">ДЗ на день</h2>
+                    <h2 class="mscp-modal-title">Уроки дня</h2>
                     <button class="mscp-close-btn">&times;</button>
+                </div>
+                <div class="mscp-hw-tabs">
+                    <button class="mscp-hw-tab" data-tab="homework">Домашнее задание</button>
+                    <button class="mscp-hw-tab" data-tab="comments">Комментарии</button>
                 </div>
                 <div class="mscp-hw-toolbar">
                     <button class="mscp-hw-nav mscp-hw-prev" data-step="-1" title="Предыдущий день">&lsaquo;</button>
@@ -52,20 +63,32 @@ const HomeworkDay = {
                     <button class="mscp-hw-nav" data-step="1" title="Следующий день">&rsaquo;</button>
                     <span class="mscp-hw-weekday"></span>
                 </div>
+                <div class="mscp-hw-commentbar">
+                    <label for="mscp-hw-comment">Комментарий (по умолчанию — невидимый символ):</label>
+                    <input type="text" id="mscp-hw-comment" class="mscp-hw-comment" placeholder="Текст комментария">
+                </div>
                 <div class="mscp-hw-list"></div>
                 <div class="mscp-hw-footer">
                     <span class="mscp-hw-summary"></span>
-                    <button class="mscp-hw-send">Выдать ДЗ</button>
+                    <button class="mscp-hw-send"></button>
                 </div>
             </div>
         `;
 
         const dateInput = this.overlay.querySelector('.mscp-hw-date');
         dateInput.value = this.state.iso;
-        dateInput.min = this.state.iso;
         dateInput.addEventListener('change', () => {
-            if (dateInput.value && dateInput.value >= dateInput.min) this.setDay(dateInput.value);
+            if (dateInput.value && this.canGoTo(dateInput.value)) this.setDay(dateInput.value);
             else dateInput.value = this.state.iso;
+        });
+        this.overlay.querySelectorAll('.mscp-hw-tab').forEach(button => {
+            button.addEventListener('click', () => this.setTab(button.dataset.tab));
+        });
+        const commentInput = this.overlay.querySelector('.mscp-hw-comment');
+        commentInput.value = this.state.commentText;
+        commentInput.addEventListener('input', () => {
+            this.state.commentText = commentInput.value;
+            this.renderFooter();
         });
         this.overlay.querySelectorAll('.mscp-hw-nav').forEach(button => {
             button.addEventListener('click', () => this.shiftDay(Number(button.dataset.step)));
@@ -74,7 +97,10 @@ const HomeworkDay = {
         this.overlay.addEventListener('click', event => {
             if (event.target === this.overlay) this.close();
         });
-        this.overlay.querySelector('.mscp-hw-send').addEventListener('click', () => this.send());
+        this.overlay.querySelector('.mscp-hw-send').addEventListener('click', () => {
+            if (this.state.tab === 'comments') this.sendComments();
+            else this.send();
+        });
 
         this.onKeydown = event => {
             if (event.key === 'Escape') this.close();
@@ -102,11 +128,32 @@ const HomeworkDay = {
      * @returns {void}
      */
     setDay(iso) {
-        if (this.state.sending || iso < ColleagueApi.isoDate(new Date())) return;
+        if (this.state.sending || !this.canGoTo(iso)) return;
 
         this.state.iso = iso;
         this.overlay.querySelector('.mscp-hw-date').value = iso;
         this.load();
+    },
+
+    /**
+     * Можно ли открыть день: не раньше сегодняшнего
+     * @param {string} iso - день в виде ГГГГ-ММ-ДД
+     * @returns {boolean}
+     */
+    canGoTo(iso) {
+        return iso >= ColleagueApi.isoDate(new Date());
+    },
+
+    /**
+     * Переключает вкладку; день и загруженные уроки остаются теми же
+     * @param {string} tab - 'homework' или 'comments'
+     * @returns {void}
+     */
+    setTab(tab) {
+        if (this.state.sending || this.state.tab === tab) return;
+
+        this.state.tab = tab;
+        this.render();
     },
 
     /**
@@ -135,21 +182,35 @@ const HomeworkDay = {
 
         try {
             const lessons = await HomeworkApi.getDay(iso);
-            const [texts, next] = await Promise.all([
+            const groupIds = [...new Set(lessons.map(lesson => lesson.groupId))];
+            // Без ответа сайта число оценок/комментариев неизвестно (null): урок без оценок по нему не объявляется
+            const [texts, next, marks, comments] = await Promise.all([
                 HomeworkApi.getTexts(lessons.flatMap(lesson => lesson.existingIds)),
-                HomeworkApi.getNextDates([...new Set(lessons.map(lesson => lesson.groupId))], iso)
+                HomeworkApi.getNextDates(groupIds, iso),
+                HomeworkApi.getMarkCounts(groupIds, iso).catch(() => null),
+                HomeworkApi.getCommentCounts(lessons.map(lesson => lesson.id)).catch(() => null)
             ]);
             if (id !== this.loadId) return;
 
-            state.lessons = lessons.map(lesson => ({
-                ...lesson,
-                existing: lesson.existingIds.map(homeworkId => texts[homeworkId]).filter(Boolean),
-                existingCount: lesson.existingIds.length,
-                text: '',
-                due: next[lesson.groupId] ?? '',
-                status: '',
-                message: ''
-            }));
+            state.lessons = lessons.map(lesson => {
+                const marksCount = marks ? marks[lesson.id] ?? 0 : null;
+                const commentsCount = comments ? comments[lesson.id] ?? 0 : null;
+                return {
+                    ...lesson,
+                    existing: lesson.existingIds.map(homeworkId => texts[homeworkId]).filter(Boolean),
+                    existingCount: lesson.existingIds.length,
+                    text: '',
+                    due: next[lesson.groupId] ?? '',
+                    status: '',
+                    message: '',
+                    marksCount,
+                    commentsCount,
+                    // Отмечаются уроки без оценок и без комментариев: повторный запуск не плодит комментарии
+                    pick: marksCount === 0 && commentsCount === 0 && lesson.ready,
+                    commentStatus: '',
+                    commentMessage: ''
+                };
+            });
         } catch (error) {
             if (id !== this.loadId) return;
             state.error = ColleagueApi.describeError(error);
@@ -182,11 +243,19 @@ const HomeworkDay = {
     render() {
         if (!this.overlay) return;
 
-        const { iso, loading, error, lessons } = this.state;
+        const { iso, loading, error, lessons, tab } = this.state;
         const [year, month, day] = iso.split('-').map(Number);
         this.overlay.querySelector('.mscp-hw-weekday').textContent =
             new Date(year, month - 1, day).toLocaleDateString('ru-RU', { weekday: 'long' });
-        this.overlay.querySelector('.mscp-hw-prev').disabled = iso <= ColleagueApi.isoDate(new Date());
+
+        const today = ColleagueApi.isoDate(new Date());
+        const dateInput = this.overlay.querySelector('.mscp-hw-date');
+        dateInput.min = today;
+        this.overlay.querySelector('.mscp-hw-prev').disabled = iso <= today;
+        this.overlay.querySelectorAll('.mscp-hw-tab').forEach(button => {
+            button.classList.toggle('mscp-hw-tab-active', button.dataset.tab === tab);
+        });
+        this.overlay.querySelector('.mscp-hw-commentbar').hidden = tab !== 'comments';
 
         const list = this.overlay.querySelector('.mscp-hw-list');
         list.replaceChildren();
@@ -197,10 +266,59 @@ const HomeworkDay = {
             note.textContent = loading ? 'Загрузка...' : error || 'В этот день у вас нет уроков.';
             list.append(note);
         } else {
-            lessons.forEach(lesson => list.append(this.renderLesson(lesson)));
+            lessons.forEach(lesson => list.append(tab === 'comments' ? this.renderCommentLesson(lesson) : this.renderLesson(lesson)));
         }
 
         this.renderFooter();
+    },
+
+    /**
+     * Строка урока на вкладке комментариев: галочка, время, название и сколько оценок/комментариев уже есть
+     * @param {Object} lesson - урок из load()
+     * @returns {HTMLElement}
+     */
+    renderCommentLesson(lesson) {
+        const row = document.createElement('label');
+        row.className = 'mscp-hw-lesson mscp-hw-commentrow';
+
+        const check = document.createElement('input');
+        check.type = 'checkbox';
+        check.checked = lesson.pick;
+        check.disabled = this.state.sending || !lesson.ready || lesson.marksCount === null;
+        check.addEventListener('change', () => {
+            lesson.pick = check.checked;
+            this.renderFooter();
+        });
+
+        const time = document.createElement('span');
+        time.className = 'mscp-hw-time';
+        time.textContent = lesson.time;
+        const title = document.createElement('span');
+        title.className = 'mscp-hw-title';
+        title.textContent = `${lesson.className} ${lesson.subject}`.trim();
+
+        const marks = document.createElement('span');
+        marks.className = lesson.marksCount === 0 ? 'mscp-hw-badge mscp-hw-badge-none' : 'mscp-hw-badge';
+        marks.textContent = lesson.marksCount === null ? 'оценки: не удалось узнать' : `оценок: ${lesson.marksCount}`;
+
+        const comments = document.createElement('span');
+        comments.className = 'mscp-hw-badge';
+        comments.textContent = lesson.commentsCount === null ? 'комментарии: не удалось узнать' : `комментариев: ${lesson.commentsCount}`;
+
+        const status = document.createElement('span');
+        status.className = `mscp-hw-status ${lesson.commentStatus ? `mscp-hw-${lesson.commentStatus}` : ''}`;
+        status.textContent = lesson.commentMessage;
+
+        row.append(check, time, title, marks, comments, status);
+        return row;
+    },
+
+    /**
+     * Уроки, отмеченные для комментария и ещё не получившие его в этом окне
+     * @returns {Array}
+     */
+    pendingComments() {
+        return this.state.lessons.filter(lesson => lesson.pick && lesson.ready && lesson.commentStatus !== 'ok');
     },
 
     /**
@@ -278,6 +396,11 @@ const HomeworkDay = {
     renderFooter() {
         if (!this.overlay) return;
 
+        if (this.state.tab === 'comments') {
+            this.renderCommentFooter();
+            return;
+        }
+
         const { sending, lessons } = this.state;
         const pending = this.pending();
         const canAssign = this.canAssign();
@@ -289,7 +412,31 @@ const HomeworkDay = {
         else if (lessons.some(lesson => lesson.status === 'ok')) summary = 'Готово. Можно выдать ещё.';
 
         this.overlay.querySelector('.mscp-hw-summary').textContent = summary;
-        this.overlay.querySelector('.mscp-hw-send').disabled = sending || !canAssign || !pending.length;
+        const send = this.overlay.querySelector('.mscp-hw-send');
+        send.textContent = 'Выдать ДЗ';
+        send.disabled = sending || !canAssign || !pending.length;
+    },
+
+    /**
+     * Подвал вкладки комментариев: сколько будет поставлено и доступна ли кнопка
+     * @returns {void}
+     */
+    renderCommentFooter() {
+        const { sending, lessons, commentText } = this.state;
+        const pending = this.pendingComments();
+        const hasText = commentText.length > 0;
+
+        let summary = 'Отметьте уроки, на которые нужен комментарий.';
+        if (!hasText) summary = 'Введите текст комментария.';
+        else if (sending) summary = 'Отправка...';
+        else if (pending.length) summary = `Будет поставлено комментариев: ${pending.length}`;
+        else if (lessons.some(lesson => lesson.commentStatus === 'ok')) summary = 'Готово.';
+        else if (lessons.length && lessons.every(lesson => lesson.marksCount !== 0)) summary = 'На всех уроках дня уже есть оценки.';
+
+        this.overlay.querySelector('.mscp-hw-summary').textContent = summary;
+        const send = this.overlay.querySelector('.mscp-hw-send');
+        send.textContent = 'Поставить комментарии';
+        send.disabled = sending || !hasText || !pending.length;
     },
 
     /**
@@ -342,6 +489,59 @@ const HomeworkDay = {
     },
 
     /**
+     * Ставит комментарий случайному ученику группы на каждом отмеченном уроке, по одному запросу за раз
+     * Текст берётся как введён, без обрезки пробелов: так можно поставить "пустой" комментарий
+     * Вход, который перестал определяться, обрывает отправку, как в send()
+     * @returns {Promise<void>}
+     */
+    async sendComments() {
+        const state = this.state;
+        if (state.sending || !state.commentText) return;
+
+        const queue = this.pendingComments();
+        if (!queue.length) return;
+
+        const text = state.commentText;
+        state.sending = true;
+        queue.forEach(lesson => {
+            lesson.commentStatus = 'wait';
+            lesson.commentMessage = 'в очереди';
+        });
+        this.render();
+
+        for (const lesson of queue) {
+            if (!this.overlay) return;
+
+            lesson.commentMessage = 'отправка...';
+            this.render();
+
+            try {
+                const studentId = lesson.studentIds[Math.floor(Math.random() * lesson.studentIds.length)];
+                await HomeworkApi.createComment(lesson, studentId, text);
+                const name = await HomeworkApi.getStudentName(lesson, studentId);
+                lesson.commentStatus = 'ok';
+                lesson.commentMessage = name ? `поставлен: ${name}` : 'поставлен';
+                lesson.commentsCount++;
+                lesson.pick = false;
+            } catch (error) {
+                lesson.commentStatus = 'error';
+                lesson.commentMessage = error.status === 401 || error.status === 0 ? ColleagueApi.describeError(error) : error.message;
+                if (error.status === 401 || error.status === 0) break;
+            }
+        }
+
+        queue.filter(lesson => lesson.commentStatus === 'wait').forEach(lesson => {
+            lesson.commentStatus = '';
+            lesson.commentMessage = '';
+        });
+
+        state.sending = false;
+        this.render();
+        // Значки "У" в расписании за окном должны сразу показать новые комментарии
+        if (queue.some(lesson => lesson.commentStatus === 'ok')) ScheduleComments.reset();
+    },
+
+    /**
      * Добавляет стили окна один раз
      * @returns {void}
      */
@@ -361,6 +561,51 @@ const HomeworkDay = {
                 box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
                 overflow: hidden;
             }
+            .mscp-hw-tabs {
+                flex: none;
+                display: flex;
+                gap: 4px;
+                padding: 8px 18px 0;
+                border-bottom: 1px solid #e9ecef;
+            }
+            .mscp-hw-tab {
+                padding: 7px 14px;
+                border: none;
+                border-bottom: 2px solid transparent;
+                background: none;
+                font-size: 14px;
+                color: #868e96;
+                cursor: pointer;
+            }
+            .mscp-hw-tab:hover { color: #212529; }
+            .mscp-hw-tab-active { color: #3b5bdb; border-bottom-color: #3b5bdb; font-weight: 600; }
+            .mscp-hw-commentbar {
+                flex: none;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                padding: 10px 18px;
+                border-bottom: 1px solid #e9ecef;
+                font-size: 13px;
+                color: #495057;
+            }
+            .mscp-hw-commentbar[hidden] { display: none; }
+            .mscp-hw-comment {
+                flex: 1;
+                padding: 6px 10px;
+                border: 1px solid #ced4da;
+                border-radius: 6px;
+                font: inherit;
+                font-size: 13px;
+            }
+            .mscp-hw-commentrow {
+                display: flex;
+                align-items: baseline;
+                gap: 10px;
+                font-size: 14px;
+                cursor: pointer;
+            }
+            .mscp-hw-badge-none { background: #fff5f5; color: #c92a2a; }
             .mscp-hw-toolbar {
                 flex: none;
                 display: flex;

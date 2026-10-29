@@ -27,6 +27,7 @@ schedule/layout.js
 schedule/colleagues-api.js
 schedule/colleagues.js
 schedule/homework-api.js
+schedule/lesson-comments.js
 schedule/homework.js
 schedule/page.js
 

@@ -50,7 +50,7 @@ function createColleaguesButton() {
 }
 
 /**
- * Создаёт кнопку окна "ДЗ на день"
+ * Создаёт кнопку окна "ДЗ и комментарии"
  * @returns {HTMLElement} контейнер с кнопкой
  */
 function createHomeworkButton() {
@@ -61,7 +61,7 @@ function createHomeworkButton() {
     const button = document.createElement('button');
     button.className = 'mscp-button';
     button.innerHTML = createHomeworkIcon();
-    button.title = 'Выдать ДЗ на все уроки дня';
+    button.title = 'ДЗ и комментарии на уроки дня';
     button.addEventListener('click', () => HomeworkDay.open());
     buttonContainer.appendChild(button);
 

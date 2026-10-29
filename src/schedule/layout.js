@@ -143,14 +143,27 @@ const ScheduleLayout = {
         const content = [...(scroller?.children ?? [])].find(child => child.contains(grid));
         content?.classList.add('mscp-sch-content');
 
+        const dates = this.weekDates();
         const entries = [];
+        let dayIndex = 0;
         for (const day of grid.children) {
             day.classList.add('mscp-sch-day');
-            entries.push(...this.collectDay(day));
+            const dayEntries = this.collectDay(day);
+            dayEntries.forEach(entry => { entry.date = dates[dayIndex] ?? ''; });
+            entries.push(...dayEntries);
+            dayIndex++;
         }
 
         for (const entry of entries) {
             entry.data = parseLessonCard(entry.card);
+
+            // Оценок нет, но есть комментарий: значок "У" оранжевый
+            if (entry.date && entry.data.journal !== 'done') {
+                const start = entry.data.start.padStart(5, '0');
+                if (ScheduleComments.count(dates[0], dates[dates.length - 1], entry.date, start, entry.data.className)) {
+                    entry.data.journal = 'comment';
+                }
+            }
         }
 
         // Предметы: цвет полоски на карточке; если предмет один, название не нужно
@@ -190,6 +203,30 @@ const ScheduleLayout = {
         }
         // Длинное название предмета переносится на вторую строку, если в карточке остаётся место
         grid.style.setProperty('--mscp-lines', (height / rows.weight) / scale >= needHeight + 14 ? 2 : 1);
+    },
+
+    /**
+     * Даты показанной недели по подписям колонок ("26 окт", "27 окт", ...)
+     * Год в подписи не указан: берётся тот, при котором дата ближе всего к сегодняшнему дню
+     * @returns {string[]} семь дней ГГГГ-ММ-ДД; пустой массив, если подписи не распознаны
+     */
+    weekDates() {
+        const head = document.querySelector('.mscp-sch-head');
+        const months = ['янв', 'фев', 'мар', 'апр', 'ма[яй]', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+        const today = new Date();
+
+        const dates = [...(head?.children ?? [])].map(cell => {
+            const match = /(\d{1,2})\s+([а-яё]+)/i.exec(cell.textContent);
+            const month = match ? months.findIndex(name => new RegExp(`^${name}`, 'i').test(match[2])) : -1;
+            if (month < 0) return '';
+
+            const nearest = [-1, 0, 1]
+                .map(shift => new Date(today.getFullYear() + shift, month, Number(match[1])))
+                .sort((a, b) => Math.abs(a - today) - Math.abs(b - today))[0];
+            return ColleagueApi.isoDate(nearest);
+        }).filter(Boolean);
+
+        return dates.length === 7 ? dates : [];
     },
 
     /**
@@ -571,6 +608,10 @@ const ScheduleLayout = {
             body.mscp-schedule .mscp-badge-wait {
                 background: rgba(11, 33, 66, 0.09);
                 color: #44506d;
+            }
+            body.mscp-schedule .mscp-badge-comment {
+                background: rgba(14, 165, 233, 0.22);
+                color: #0b5b86;
             }
 
             /* Верхняя белая полоса с названием школы не нужна; кнопка календаря уходит в строку расписания */
