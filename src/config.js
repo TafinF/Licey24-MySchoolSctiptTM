@@ -237,7 +237,9 @@ const DEFAULT_SETTINGS = {
     /** Сам подтверждать диалог "Выдача домашнего задания ученикам" после "Выдать задание" */
     homeworkAutoIssue: true,
     /** Сам нажимать "Открыть описание" в окне прикрепления материалов к ДЗ */
-    homeworkAutoDescription: false
+    homeworkAutoDescription: false,
+    /** В окне "Уроки дня" показывать поле "Одно ДЗ для всех уроков" */
+    homeworkFillAll: false
 };
 
 /** Способы выбора ученика для ответа */

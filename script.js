@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         My School Color Point
 // @namespace    http://tampermonkey.net/
-// @version      2026-11-02_21-51-59
+// @version      2026-11-02_21-55-27
 // @description  Окрашивает оценки в разные цвета в Моя Школа
 // @author       Tafintsev Feodor taf.f11@ya.ru
 // @match        https://authedu.mosreg.ru/*
@@ -22,7 +22,7 @@
  * Используется в Tampermonkey и отображается в меню настроек
  * Подставляется автоматически при сборке (build.sh)
  */
-const VERSION = '2026-11-02_21-51-59';
+const VERSION = '2026-11-02_21-55-27';
 
 /**
  * Основная конфигурация скрипта
@@ -252,7 +252,9 @@ const DEFAULT_SETTINGS = {
     /** Сам подтверждать диалог "Выдача домашнего задания ученикам" после "Выдать задание" */
     homeworkAutoIssue: true,
     /** Сам нажимать "Открыть описание" в окне прикрепления материалов к ДЗ */
-    homeworkAutoDescription: false
+    homeworkAutoDescription: false,
+    /** В окне "Уроки дня" показывать поле "Одно ДЗ для всех уроков" */
+    homeworkFillAll: false
 };
 
 /** Способы выбора ученика для ответа */
@@ -5141,7 +5143,8 @@ const HomeworkDay = {
 
         this.state = {
             iso: ColleagueApi.isoDate(new Date()), tab: 'homework', commentText: this.DEFAULT_COMMENT,
-            lessons: [], loading: true, sending: false, error: ''
+            lessons: [], loading: true, sending: false, error: '',
+            fillAllEnabled: loadSettings().homeworkFillAll === true
         };
 
         this.overlay = document.createElement('div');
@@ -5330,11 +5333,11 @@ const HomeworkDay = {
     },
 
     /**
-     * Уроки, в поля которых можно подставить общий текст: есть группа и срок, в этом окне ДЗ ещё не выдано
+     * Уроки, в поля которых можно подставить общий текст: есть группа и срок, ДЗ на уроке ещё нет
      * @returns {Array}
      */
     fillable() {
-        return this.state.lessons.filter(lesson => lesson.ready && lesson.due && lesson.status !== 'ok');
+        return this.state.lessons.filter(lesson => lesson.ready && lesson.due && !lesson.existingCount && lesson.status !== 'ok');
     },
 
     /**
@@ -5392,7 +5395,7 @@ const HomeworkDay = {
             button.classList.toggle('mscp-hw-tab-active', button.dataset.tab === tab);
         });
         this.overlay.querySelector('.mscp-hw-commentbar').hidden = tab !== 'comments';
-        this.overlay.querySelector('.mscp-hw-allbar').hidden = tab !== 'homework';
+        this.overlay.querySelector('.mscp-hw-allbar').hidden = tab !== 'homework' || !this.state.fillAllEnabled;
 
         const list = this.overlay.querySelector('.mscp-hw-list');
         list.replaceChildren();
@@ -6595,6 +6598,12 @@ function createScheduleTab(currentSettings) {
             'Открывать описание сразу',
             'В окне «Прикрепление материалов к домашнему заданию» кнопка «Открыть описание» нажимается сама',
             currentSettings.homeworkAutoDescription === true
+        ),
+        createSwitchRow(
+            'homeworkFillAll',
+            'Одно ДЗ для всех уроков',
+            'В окне «Уроки дня» над списком появляется поле: текст подставляется во все уроки, где ДЗ ещё нет',
+            currentSettings.homeworkFillAll === true
         )
     ));
     syncLook();

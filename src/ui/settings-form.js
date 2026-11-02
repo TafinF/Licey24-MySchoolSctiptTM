@@ -240,6 +240,12 @@ function createScheduleTab(currentSettings) {
             'Открывать описание сразу',
             'В окне «Прикрепление материалов к домашнему заданию» кнопка «Открыть описание» нажимается сама',
             currentSettings.homeworkAutoDescription === true
+        ),
+        createSwitchRow(
+            'homeworkFillAll',
+            'Одно ДЗ для всех уроков',
+            'В окне «Уроки дня» над списком появляется поле: текст подставляется во все уроки, где ДЗ ещё нет',
+            currentSettings.homeworkFillAll === true
         )
     ));
     syncLook();

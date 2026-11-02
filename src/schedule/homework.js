@@ -42,7 +42,8 @@ const HomeworkDay = {
 
         this.state = {
             iso: ColleagueApi.isoDate(new Date()), tab: 'homework', commentText: this.DEFAULT_COMMENT,
-            lessons: [], loading: true, sending: false, error: ''
+            lessons: [], loading: true, sending: false, error: '',
+            fillAllEnabled: loadSettings().homeworkFillAll === true
         };
 
         this.overlay = document.createElement('div');
@@ -231,11 +232,11 @@ const HomeworkDay = {
     },
 
     /**
-     * Уроки, в поля которых можно подставить общий текст: есть группа и срок, в этом окне ДЗ ещё не выдано
+     * Уроки, в поля которых можно подставить общий текст: есть группа и срок, ДЗ на уроке ещё нет
      * @returns {Array}
      */
     fillable() {
-        return this.state.lessons.filter(lesson => lesson.ready && lesson.due && lesson.status !== 'ok');
+        return this.state.lessons.filter(lesson => lesson.ready && lesson.due && !lesson.existingCount && lesson.status !== 'ok');
     },
 
     /**
@@ -293,7 +294,7 @@ const HomeworkDay = {
             button.classList.toggle('mscp-hw-tab-active', button.dataset.tab === tab);
         });
         this.overlay.querySelector('.mscp-hw-commentbar').hidden = tab !== 'comments';
-        this.overlay.querySelector('.mscp-hw-allbar').hidden = tab !== 'homework';
+        this.overlay.querySelector('.mscp-hw-allbar').hidden = tab !== 'homework' || !this.state.fillAllEnabled;
 
         const list = this.overlay.querySelector('.mscp-hw-list');
         list.replaceChildren();
