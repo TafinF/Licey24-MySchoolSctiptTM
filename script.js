@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         My School Color Point
 // @namespace    http://tampermonkey.net/
-// @version      2026-11-02_21-49-25
+// @version      2026-11-02_21-51-59
 // @description  Окрашивает оценки в разные цвета в Моя Школа
 // @author       Tafintsev Feodor taf.f11@ya.ru
 // @match        https://authedu.mosreg.ru/*
@@ -22,7 +22,7 @@
  * Используется в Tampermonkey и отображается в меню настроек
  * Подставляется автоматически при сборке (build.sh)
  */
-const VERSION = '2026-11-02_21-49-25';
+const VERSION = '2026-11-02_21-51-59';
 
 /**
  * Основная конфигурация скрипта
@@ -5162,6 +5162,10 @@ const HomeworkDay = {
                     <button class="mscp-hw-nav" data-step="1" title="Следующий день">&rsaquo;</button>
                     <span class="mscp-hw-weekday"></span>
                 </div>
+                <div class="mscp-hw-allbar">
+                    <textarea class="mscp-hw-alltext" rows="2" placeholder="Одно ДЗ для всех уроков дня"></textarea>
+                    <button class="mscp-hw-fill">Подставить во все</button>
+                </div>
                 <div class="mscp-hw-commentbar">
                     <label for="mscp-hw-comment">Комментарий (по умолчанию — невидимый символ):</label>
                     <input type="text" id="mscp-hw-comment" class="mscp-hw-comment" placeholder="Текст комментария">
@@ -5192,6 +5196,12 @@ const HomeworkDay = {
         this.overlay.querySelectorAll('.mscp-hw-nav').forEach(button => {
             button.addEventListener('click', () => this.shiftDay(Number(button.dataset.step)));
         });
+        const allText = this.overlay.querySelector('.mscp-hw-alltext');
+        allText.addEventListener('input', () => this.renderFooter());
+        allText.addEventListener('keydown', event => {
+            if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) this.fillAll(allText.value);
+        });
+        this.overlay.querySelector('.mscp-hw-fill').addEventListener('click', () => this.fillAll(allText.value));
         this.overlay.querySelector('.mscp-close-btn').addEventListener('click', () => this.close());
         this.overlay.addEventListener('click', event => {
             if (event.target === this.overlay) this.close();
@@ -5320,6 +5330,33 @@ const HomeworkDay = {
     },
 
     /**
+     * Уроки, в поля которых можно подставить общий текст: есть группа и срок, в этом окне ДЗ ещё не выдано
+     * @returns {Array}
+     */
+    fillable() {
+        return this.state.lessons.filter(lesson => lesson.ready && lesson.due && lesson.status !== 'ok');
+    },
+
+    /**
+     * Подставляет один текст во все доступные поля уроков; выдача — обычной кнопкой, тексты можно поправить
+     * @param {string} value - общий текст ДЗ
+     * @returns {void}
+     */
+    fillAll(value) {
+        const text = value.trim();
+        if (this.state.sending || !text) return;
+
+        this.fillable().forEach(lesson => {
+            lesson.text = text;
+            if (lesson.status === 'error') {
+                lesson.status = '';
+                lesson.message = '';
+            }
+        });
+        this.render();
+    },
+
+    /**
      * Можно ли выдавать ДЗ в выбранный день: сайт не принимает дату выдачи раньше сегодняшней
      * @returns {boolean}
      */
@@ -5355,6 +5392,7 @@ const HomeworkDay = {
             button.classList.toggle('mscp-hw-tab-active', button.dataset.tab === tab);
         });
         this.overlay.querySelector('.mscp-hw-commentbar').hidden = tab !== 'comments';
+        this.overlay.querySelector('.mscp-hw-allbar').hidden = tab !== 'homework';
 
         const list = this.overlay.querySelector('.mscp-hw-list');
         list.replaceChildren();
@@ -5509,6 +5547,11 @@ const HomeworkDay = {
         else if (sending) summary = 'Отправка...';
         else if (pending.length) summary = `Будет выдано ДЗ: ${pending.length}`;
         else if (lessons.some(lesson => lesson.status === 'ok')) summary = 'Готово. Можно выдать ещё.';
+
+        const fillable = this.fillable().length;
+        const fill = this.overlay.querySelector('.mscp-hw-fill');
+        fill.textContent = fillable ? `Подставить во все (${fillable})` : 'Подставить во все';
+        fill.disabled = sending || !fillable || !this.overlay.querySelector('.mscp-hw-alltext').value.trim();
 
         this.overlay.querySelector('.mscp-hw-summary').textContent = summary;
         const send = this.overlay.querySelector('.mscp-hw-send');
@@ -5678,6 +5721,39 @@ const HomeworkDay = {
             }
             .mscp-hw-tab:hover { color: #212529; }
             .mscp-hw-tab-active { color: #3b5bdb; border-bottom-color: #3b5bdb; font-weight: 600; }
+            .mscp-hw-allbar {
+                flex: none;
+                display: flex;
+                align-items: stretch;
+                gap: 8px;
+                padding: 10px 18px;
+                border-bottom: 1px solid #e9ecef;
+                background: #f3f6ff;
+            }
+            .mscp-hw-allbar[hidden] { display: none; }
+            .mscp-hw-alltext {
+                flex: 1;
+                box-sizing: border-box;
+                padding: 8px 10px;
+                border: 1px solid #bac8ff;
+                border-radius: 6px;
+                font: inherit;
+                font-size: 13px;
+                resize: none;
+                background: white;
+            }
+            .mscp-hw-fill {
+                flex: none;
+                padding: 0 14px;
+                border: 1px solid #3b5bdb;
+                border-radius: 8px;
+                background: white;
+                color: #3b5bdb;
+                font-size: 13px;
+                cursor: pointer;
+            }
+            .mscp-hw-fill:hover:not(:disabled) { background: #edf2ff; }
+            .mscp-hw-fill:disabled { border-color: #ced4da; color: #adb5bd; cursor: default; }
             .mscp-hw-commentbar {
                 flex: none;
                 display: flex;
