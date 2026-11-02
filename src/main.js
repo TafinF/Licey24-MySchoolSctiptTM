@@ -132,9 +132,11 @@ function syncScheduleLayout(url) {
         document.addEventListener('DOMContentLoaded', () => {
             initUrlMonitor();
             initCommentPresets();
+            initHomeworkConfirm();
         });
     } else {
         initUrlMonitor();
         initCommentPresets();
+        initHomeworkConfirm();
     }
 })();

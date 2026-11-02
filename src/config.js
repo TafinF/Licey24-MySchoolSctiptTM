@@ -231,7 +231,9 @@ const DEFAULT_SETTINGS = {
     /** Свои быстрые комментарии в карточке оценки (по умолчанию кнопок нет) */
     commentPresets: [],
     /** Кнопка комментария сразу сохраняет оценку в карточке */
-    commentFinishWithButton: false
+    commentFinishWithButton: false,
+    /** Сам подтверждать диалог "Изменение состава учащихся" при выдаче ДЗ на сайте */
+    homeworkAutoConfirm: true
 };
 
 /** Способы выбора ученика для ответа */

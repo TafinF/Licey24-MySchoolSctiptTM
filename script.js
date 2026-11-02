@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         My School Color Point
 // @namespace    http://tampermonkey.net/
-// @version      2026-11-02_21-35-59
+// @version      2026-11-02_21-37-06
 // @description  Окрашивает оценки в разные цвета в Моя Школа
 // @author       Tafintsev Feodor taf.f11@ya.ru
 // @match        https://authedu.mosreg.ru/*
@@ -22,7 +22,7 @@
  * Используется в Tampermonkey и отображается в меню настроек
  * Подставляется автоматически при сборке (build.sh)
  */
-const VERSION = '2026-11-02_21-35-59';
+const VERSION = '2026-11-02_21-37-06';
 
 /**
  * Основная конфигурация скрипта
@@ -246,7 +246,9 @@ const DEFAULT_SETTINGS = {
     /** Свои быстрые комментарии в карточке оценки (по умолчанию кнопок нет) */
     commentPresets: [],
     /** Кнопка комментария сразу сохраняет оценку в карточке */
-    commentFinishWithButton: false
+    commentFinishWithButton: false,
+    /** Сам подтверждать диалог "Изменение состава учащихся" при выдаче ДЗ на сайте */
+    homeworkAutoConfirm: true
 };
 
 /** Способы выбора ученика для ответа */
@@ -2174,6 +2176,52 @@ function initCommentPresets() {
     const observer = new MutationObserver(() => {
         document.querySelectorAll('textarea[name="comment"][data-test-component^="markFastCard"]')
             .forEach(addCommentButtons);
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+}
+
+
+// ============================================================
+// ВЫДАЧА ДЗ НА САЙТЕ: диалог "Изменение состава учащихся"
+// ============================================================
+
+/** Кнопка "Подтвердить" в диалоге изменения состава учащихся */
+const HOMEWORK_CONFIRM_SELECTOR = '[data-test-component="LIHomeworkAlertConfirm-confirm"]';
+
+/**
+ * Обрабатывает появившийся диалог "Изменение состава учащихся"
+ * - Поднимает диалог над поповером "Выбор учащихся", иначе он оказывается под ним
+ * - Если включена настройка, сам нажимает "Подтвердить"
+ * Каждый диалог обрабатывается один раз
+ * @param {HTMLButtonElement} confirmButton - кнопка "Подтвердить"
+ * @returns {void}
+ */
+function handleHomeworkConfirm(confirmButton) {
+    if (confirmButton.dataset.mscpHandled) return;
+    confirmButton.dataset.mscpHandled = '1';
+
+    // Диалог лежит прямо в body отдельным контейнером со своим z-index
+    let wrapper = confirmButton;
+    while (wrapper.parentElement && wrapper.parentElement !== document.body) {
+        wrapper = wrapper.parentElement;
+    }
+    wrapper.style.zIndex = '2000';
+
+    if (loadSettings().homeworkAutoConfirm) {
+        setTimeout(() => {
+            if (confirmButton.isConnected && !confirmButton.disabled) confirmButton.click();
+        }, 0);
+    }
+}
+
+/**
+ * Следит за появлением диалога подтверждения при выдаче домашнего задания
+ * @returns {void}
+ */
+function initHomeworkConfirm() {
+    const observer = new MutationObserver(() => {
+        const button = document.querySelector(HOMEWORK_CONFIRM_SELECTOR);
+        if (button) handleHomeworkConfirm(button);
     });
     observer.observe(document.body, { childList: true, subtree: true });
 }
@@ -6407,6 +6455,15 @@ function createScheduleTab(currentSettings) {
     };
     tab.addEventListener('change', syncLook);
     tab.appendChild(styleSection);
+    tab.appendChild(createSection(
+        'Выдача домашнего задания',
+        createSwitchRow(
+            'homeworkAutoConfirm',
+            'Подтверждать смену учеников',
+            'Диалог «Изменение состава учащихся» при выборе «Выборочно» подтверждается сам',
+            currentSettings.homeworkAutoConfirm !== false
+        )
+    ));
     syncLook();
 
     return tab;
@@ -6686,7 +6743,7 @@ function applySettings(settings, key) {
     }
 
     // Комментарии читаются из настроек в момент открытия карточки оценки
-    if (key.startsWith('comment')) return;
+    if (key.startsWith('comment') || key.startsWith('homework')) return;
 
     if (!isTargetUrl(window.location.href)) return;
 
@@ -7287,10 +7344,12 @@ function syncScheduleLayout(url) {
         document.addEventListener('DOMContentLoaded', () => {
             initUrlMonitor();
             initCommentPresets();
+            initHomeworkConfirm();
         });
     } else {
         initUrlMonitor();
         initCommentPresets();
+        initHomeworkConfirm();
     }
 })();
 

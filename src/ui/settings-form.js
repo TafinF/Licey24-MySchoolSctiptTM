@@ -221,6 +221,15 @@ function createScheduleTab(currentSettings) {
     };
     tab.addEventListener('change', syncLook);
     tab.appendChild(styleSection);
+    tab.appendChild(createSection(
+        'Выдача домашнего задания',
+        createSwitchRow(
+            'homeworkAutoConfirm',
+            'Подтверждать смену учеников',
+            'Диалог «Изменение состава учащихся» при выборе «Выборочно» подтверждается сам',
+            currentSettings.homeworkAutoConfirm !== false
+        )
+    ));
     syncLook();
 
     return tab;

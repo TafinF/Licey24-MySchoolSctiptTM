@@ -17,7 +17,7 @@ function applySettings(settings, key) {
     }
 
     // Комментарии читаются из настроек в момент открытия карточки оценки
-    if (key.startsWith('comment')) return;
+    if (key.startsWith('comment') || key.startsWith('homework')) return;
 
     if (!isTargetUrl(window.location.href)) return;
 
