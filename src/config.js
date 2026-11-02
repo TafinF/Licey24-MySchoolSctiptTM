@@ -90,8 +90,8 @@ const CONFIG = {
      * Настройки подсветки форм контроля
      */
     CONTROL_FORMS: {
-        /** CSS-класс для поиска span элементов в thead */
-        SPAN_CLASS: '.DSXOGdoSiFGKohRuaDDx.ebIBbAN3ZomwnCMWP167._ELGiVRWaoZZRQLlT7eO.LqxH9tRjFX8eUgojIkc1.p2N_yf8k6HEnunN8Zt12.E8taxZlPjqlq_tc1djmu.uikwDrsLuFZMfBupkv7A',
+        /** Подпись формы контроля (сокращение) в шапке журнала; классы на сайте хешированные и меняются, атрибут стабилен */
+        SPAN_SELECTOR: 'thead [data-test-component^="controlFormContentHeadCell"] span',
         /**
          * Формы, оценку по которым можно ставить и менять только в день урока, — сокращения из шапки журнала
          * Это формы из SAME_DAY_FORMS проекта school-journal; сокращения взяты из справочника сайта

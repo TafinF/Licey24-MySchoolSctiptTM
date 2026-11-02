@@ -32,8 +32,7 @@ function colorizeTable(tableBody) {
  * @returns {void}
  */
 function highlightControlForms() {
-    const selector = `thead span${CONFIG.CONTROL_FORMS.SPAN_CLASS}`;
-    const spans = document.querySelectorAll(selector);
+    const spans = document.querySelectorAll(CONFIG.CONTROL_FORMS.SPAN_SELECTOR);
 
     spans.forEach(span => {
         const spanText = span.textContent.trim();

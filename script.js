@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         My School Color Point
 // @namespace    http://tampermonkey.net/
-// @version      2026-11-02_22-17-50
+// @version      2026-11-02_22-23-44
 // @description  Окрашивает оценки в разные цвета в Моя Школа
 // @author       Tafintsev Feodor taf.f11@ya.ru
 // @match        https://authedu.mosreg.ru/*
@@ -22,7 +22,7 @@
  * Используется в Tampermonkey и отображается в меню настроек
  * Подставляется автоматически при сборке (build.sh)
  */
-const VERSION = '2026-11-02_22-17-50';
+const VERSION = '2026-11-02_22-23-44';
 
 /**
  * Основная конфигурация скрипта
@@ -105,8 +105,8 @@ const CONFIG = {
      * Настройки подсветки форм контроля
      */
     CONTROL_FORMS: {
-        /** CSS-класс для поиска span элементов в thead */
-        SPAN_CLASS: '.DSXOGdoSiFGKohRuaDDx.ebIBbAN3ZomwnCMWP167._ELGiVRWaoZZRQLlT7eO.LqxH9tRjFX8eUgojIkc1.p2N_yf8k6HEnunN8Zt12.E8taxZlPjqlq_tc1djmu.uikwDrsLuFZMfBupkv7A',
+        /** Подпись формы контроля (сокращение) в шапке журнала; классы на сайте хешированные и меняются, атрибут стабилен */
+        SPAN_SELECTOR: 'thead [data-test-component^="controlFormContentHeadCell"] span',
         /**
          * Формы, оценку по которым можно ставить и менять только в день урока, — сокращения из шапки журнала
          * Это формы из SAME_DAY_FORMS проекта school-journal; сокращения взяты из справочника сайта
@@ -1217,8 +1217,7 @@ function colorizeTable(tableBody) {
  * @returns {void}
  */
 function highlightControlForms() {
-    const selector = `thead span${CONFIG.CONTROL_FORMS.SPAN_CLASS}`;
-    const spans = document.querySelectorAll(selector);
+    const spans = document.querySelectorAll(CONFIG.CONTROL_FORMS.SPAN_SELECTOR);
 
     spans.forEach(span => {
         const spanText = span.textContent.trim();
