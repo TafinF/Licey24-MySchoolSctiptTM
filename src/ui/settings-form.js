@@ -234,6 +234,12 @@ function createScheduleTab(currentSettings) {
             'Подтверждать выдачу задания',
             'Диалог «Выдача домашнего задания ученикам» подтверждается сам: «Выдать задание» выдаёт ДЗ сразу',
             currentSettings.homeworkAutoIssue !== false
+        ),
+        createSwitchRow(
+            'homeworkAutoDescription',
+            'Открывать описание сразу',
+            'В окне «Прикрепление материалов к домашнему заданию» кнопка «Открыть описание» нажимается сама',
+            currentSettings.homeworkAutoDescription === true
         )
     ));
     syncLook();

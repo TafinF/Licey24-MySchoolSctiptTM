@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         My School Color Point
 // @namespace    http://tampermonkey.net/
-// @version      2026-11-02_21-47-18
+// @version      2026-11-02_21-49-25
 // @description  Окрашивает оценки в разные цвета в Моя Школа
 // @author       Tafintsev Feodor taf.f11@ya.ru
 // @match        https://authedu.mosreg.ru/*
@@ -22,7 +22,7 @@
  * Используется в Tampermonkey и отображается в меню настроек
  * Подставляется автоматически при сборке (build.sh)
  */
-const VERSION = '2026-11-02_21-47-18';
+const VERSION = '2026-11-02_21-49-25';
 
 /**
  * Основная конфигурация скрипта
@@ -250,7 +250,9 @@ const DEFAULT_SETTINGS = {
     /** Сам подтверждать диалог "Изменение состава учащихся" при выдаче ДЗ на сайте */
     homeworkAutoConfirm: true,
     /** Сам подтверждать диалог "Выдача домашнего задания ученикам" после "Выдать задание" */
-    homeworkAutoIssue: true
+    homeworkAutoIssue: true,
+    /** Сам нажимать "Открыть описание" в окне прикрепления материалов к ДЗ */
+    homeworkAutoDescription: false
 };
 
 /** Способы выбора ученика для ответа */
@@ -2232,12 +2234,35 @@ function handleHomeworkConfirm(confirmButton, setting) {
     }
 }
 
+/** Кнопка "Открыть описание" в окне прикрепления материалов к домашнему заданию */
+const HOMEWORK_OPEN_DESCRIPTION_SELECTOR = '[data-test-component="Footer.homework_creation"]';
+
 /**
- * Следит за появлением диалогов подтверждения при выдаче домашнего задания
+ * Нажимает "Открыть описание" в окне прикрепления материалов, если включена настройка
+ * Каждая кнопка нажимается один раз
+ * @param {HTMLButtonElement} button - кнопка "Открыть описание"
+ * @returns {void}
+ */
+function handleHomeworkDescription(button) {
+    if (button.dataset.mscpHandled) return;
+    button.dataset.mscpHandled = '1';
+
+    if (loadSettings().homeworkAutoDescription) {
+        setTimeout(() => {
+            if (button.isConnected && !button.disabled) button.click();
+        }, 0);
+    }
+}
+
+/**
+ * Следит за появлением диалогов и окна материалов при выдаче домашнего задания
  * @returns {void}
  */
 function initHomeworkConfirm() {
     const observer = new MutationObserver(() => {
+        const descriptionButton = document.querySelector(HOMEWORK_OPEN_DESCRIPTION_SELECTOR);
+        if (descriptionButton) handleHomeworkDescription(descriptionButton);
+
         HOMEWORK_CONFIRM_DIALOGS.forEach(({ selector, setting }) => {
             const button = document.querySelector(selector);
             if (button) handleHomeworkConfirm(button, setting);
@@ -6488,6 +6513,12 @@ function createScheduleTab(currentSettings) {
             'Подтверждать выдачу задания',
             'Диалог «Выдача домашнего задания ученикам» подтверждается сам: «Выдать задание» выдаёт ДЗ сразу',
             currentSettings.homeworkAutoIssue !== false
+        ),
+        createSwitchRow(
+            'homeworkAutoDescription',
+            'Открывать описание сразу',
+            'В окне «Прикрепление материалов к домашнему заданию» кнопка «Открыть описание» нажимается сама',
+            currentSettings.homeworkAutoDescription === true
         )
     ));
     syncLook();
