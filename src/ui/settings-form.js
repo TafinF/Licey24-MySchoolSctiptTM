@@ -125,6 +125,7 @@ function createJournalTab(currentSettings) {
 
     const pageRows = [
         createSwitchRow('hideAverageMark', 'Выключать средний балл по теме', 'При каждой загрузке журнала', currentSettings.hideAverageMark),
+        createSwitchRow('warnPastRestrictedForm', 'Плашка про формы «только в день урока»', 'В карточке оценки красная плашка, если форму контроля нельзя ставить и менять задним числом', currentSettings.warnPastRestrictedForm !== false),
         createSwitchRow('hideBanner', 'Убрать баннер', 'Если снять галочку, баннер вернётся после перезагрузки страницы', currentSettings.hideBanner)
     ];
 

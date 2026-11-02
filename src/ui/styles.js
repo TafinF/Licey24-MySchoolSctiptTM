@@ -518,6 +518,18 @@ function createStyles() {
             padding-top: 8px;
         }
 
+        /* Плашка в карточке оценки: форму нельзя менять на прошлую дату */
+        .mscp-past-warning {
+            margin: 8px 12px;
+            padding: 10px 14px;
+            border-radius: 8px;
+            background: #e03131;
+            color: #fff;
+            font-size: 14px;
+            font-weight: 600;
+            line-height: 1.35;
+        }
+
         /* Список быстрых комментариев */
         .mscp-presets {
             margin-top: 8px;

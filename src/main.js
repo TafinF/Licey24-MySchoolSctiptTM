@@ -133,10 +133,12 @@ function syncScheduleLayout(url) {
             initUrlMonitor();
             initCommentPresets();
             initHomeworkConfirm();
+            initPastFormWarning();
         });
     } else {
         initUrlMonitor();
         initCommentPresets();
         initHomeworkConfirm();
+        initPastFormWarning();
     }
 })();
