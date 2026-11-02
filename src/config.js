@@ -233,7 +233,9 @@ const DEFAULT_SETTINGS = {
     /** Кнопка комментария сразу сохраняет оценку в карточке */
     commentFinishWithButton: false,
     /** Сам подтверждать диалог "Изменение состава учащихся" при выдаче ДЗ на сайте */
-    homeworkAutoConfirm: true
+    homeworkAutoConfirm: true,
+    /** Сам подтверждать диалог "Выдача домашнего задания ученикам" после "Выдать задание" */
+    homeworkAutoIssue: true
 };
 
 /** Способы выбора ученика для ответа */

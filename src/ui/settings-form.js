@@ -228,6 +228,12 @@ function createScheduleTab(currentSettings) {
             'Подтверждать смену учеников',
             'Диалог «Изменение состава учащихся» при выборе «Выборочно» подтверждается сам',
             currentSettings.homeworkAutoConfirm !== false
+        ),
+        createSwitchRow(
+            'homeworkAutoIssue',
+            'Подтверждать выдачу задания',
+            'Диалог «Выдача домашнего задания ученикам» подтверждается сам: «Выдать задание» выдаёт ДЗ сразу',
+            currentSettings.homeworkAutoIssue !== false
         )
     ));
     syncLook();

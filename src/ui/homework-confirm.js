@@ -1,19 +1,35 @@
 // ============================================================
-// ВЫДАЧА ДЗ НА САЙТЕ: диалог "Изменение состава учащихся"
+// ВЫДАЧА ДЗ НА САЙТЕ: диалоги подтверждения
 // ============================================================
 
-/** Кнопка "Подтвердить" в диалоге изменения состава учащихся */
-const HOMEWORK_CONFIRM_SELECTOR = '[data-test-component="LIHomeworkAlertConfirm-confirm"]';
+/**
+ * Диалоги подтверждения при выдаче домашнего задания
+ * - selector: кнопка "Подтвердить" диалога
+ * - setting: настройка, включающая автоподтверждение
+ */
+const HOMEWORK_CONFIRM_DIALOGS = [
+    {
+        /** "Изменение состава учащихся" при выборе "Выборочно" */
+        selector: '[data-test-component="LIHomeworkAlertConfirm-confirm"]',
+        setting: 'homeworkAutoConfirm'
+    },
+    {
+        /** "Выдача домашнего задания ученикам" после кнопки "Выдать задание" */
+        selector: '[data-test-component="HTManagerFooterAlertConfirmAddingHomeTask-confirm"]',
+        setting: 'homeworkAutoIssue'
+    }
+];
 
 /**
- * Обрабатывает появившийся диалог "Изменение состава учащихся"
- * - Поднимает диалог над поповером "Выбор учащихся", иначе он оказывается под ним
+ * Обрабатывает появившийся диалог подтверждения
+ * - Поднимает диалог над остальными окнами (поповер "Выбор учащихся" иначе перекрывает его)
  * - Если включена настройка, сам нажимает "Подтвердить"
  * Каждый диалог обрабатывается один раз
  * @param {HTMLButtonElement} confirmButton - кнопка "Подтвердить"
+ * @param {string} setting - ключ настройки автоподтверждения
  * @returns {void}
  */
-function handleHomeworkConfirm(confirmButton) {
+function handleHomeworkConfirm(confirmButton, setting) {
     if (confirmButton.dataset.mscpHandled) return;
     confirmButton.dataset.mscpHandled = '1';
 
@@ -24,7 +40,7 @@ function handleHomeworkConfirm(confirmButton) {
     }
     wrapper.style.zIndex = '2000';
 
-    if (loadSettings().homeworkAutoConfirm) {
+    if (loadSettings()[setting]) {
         setTimeout(() => {
             if (confirmButton.isConnected && !confirmButton.disabled) confirmButton.click();
         }, 0);
@@ -32,13 +48,15 @@ function handleHomeworkConfirm(confirmButton) {
 }
 
 /**
- * Следит за появлением диалога подтверждения при выдаче домашнего задания
+ * Следит за появлением диалогов подтверждения при выдаче домашнего задания
  * @returns {void}
  */
 function initHomeworkConfirm() {
     const observer = new MutationObserver(() => {
-        const button = document.querySelector(HOMEWORK_CONFIRM_SELECTOR);
-        if (button) handleHomeworkConfirm(button);
+        HOMEWORK_CONFIRM_DIALOGS.forEach(({ selector, setting }) => {
+            const button = document.querySelector(selector);
+            if (button) handleHomeworkConfirm(button, setting);
+        });
     });
     observer.observe(document.body, { childList: true, subtree: true });
 }

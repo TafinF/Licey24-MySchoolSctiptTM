@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         My School Color Point
 // @namespace    http://tampermonkey.net/
-// @version      2026-11-02_21-37-06
+// @version      2026-11-02_21-47-18
 // @description  Окрашивает оценки в разные цвета в Моя Школа
 // @author       Tafintsev Feodor taf.f11@ya.ru
 // @match        https://authedu.mosreg.ru/*
@@ -22,7 +22,7 @@
  * Используется в Tampermonkey и отображается в меню настроек
  * Подставляется автоматически при сборке (build.sh)
  */
-const VERSION = '2026-11-02_21-37-06';
+const VERSION = '2026-11-02_21-47-18';
 
 /**
  * Основная конфигурация скрипта
@@ -248,7 +248,9 @@ const DEFAULT_SETTINGS = {
     /** Кнопка комментария сразу сохраняет оценку в карточке */
     commentFinishWithButton: false,
     /** Сам подтверждать диалог "Изменение состава учащихся" при выдаче ДЗ на сайте */
-    homeworkAutoConfirm: true
+    homeworkAutoConfirm: true,
+    /** Сам подтверждать диалог "Выдача домашнего задания ученикам" после "Выдать задание" */
+    homeworkAutoIssue: true
 };
 
 /** Способы выбора ученика для ответа */
@@ -2182,21 +2184,37 @@ function initCommentPresets() {
 
 
 // ============================================================
-// ВЫДАЧА ДЗ НА САЙТЕ: диалог "Изменение состава учащихся"
+// ВЫДАЧА ДЗ НА САЙТЕ: диалоги подтверждения
 // ============================================================
 
-/** Кнопка "Подтвердить" в диалоге изменения состава учащихся */
-const HOMEWORK_CONFIRM_SELECTOR = '[data-test-component="LIHomeworkAlertConfirm-confirm"]';
+/**
+ * Диалоги подтверждения при выдаче домашнего задания
+ * - selector: кнопка "Подтвердить" диалога
+ * - setting: настройка, включающая автоподтверждение
+ */
+const HOMEWORK_CONFIRM_DIALOGS = [
+    {
+        /** "Изменение состава учащихся" при выборе "Выборочно" */
+        selector: '[data-test-component="LIHomeworkAlertConfirm-confirm"]',
+        setting: 'homeworkAutoConfirm'
+    },
+    {
+        /** "Выдача домашнего задания ученикам" после кнопки "Выдать задание" */
+        selector: '[data-test-component="HTManagerFooterAlertConfirmAddingHomeTask-confirm"]',
+        setting: 'homeworkAutoIssue'
+    }
+];
 
 /**
- * Обрабатывает появившийся диалог "Изменение состава учащихся"
- * - Поднимает диалог над поповером "Выбор учащихся", иначе он оказывается под ним
+ * Обрабатывает появившийся диалог подтверждения
+ * - Поднимает диалог над остальными окнами (поповер "Выбор учащихся" иначе перекрывает его)
  * - Если включена настройка, сам нажимает "Подтвердить"
  * Каждый диалог обрабатывается один раз
  * @param {HTMLButtonElement} confirmButton - кнопка "Подтвердить"
+ * @param {string} setting - ключ настройки автоподтверждения
  * @returns {void}
  */
-function handleHomeworkConfirm(confirmButton) {
+function handleHomeworkConfirm(confirmButton, setting) {
     if (confirmButton.dataset.mscpHandled) return;
     confirmButton.dataset.mscpHandled = '1';
 
@@ -2207,7 +2225,7 @@ function handleHomeworkConfirm(confirmButton) {
     }
     wrapper.style.zIndex = '2000';
 
-    if (loadSettings().homeworkAutoConfirm) {
+    if (loadSettings()[setting]) {
         setTimeout(() => {
             if (confirmButton.isConnected && !confirmButton.disabled) confirmButton.click();
         }, 0);
@@ -2215,13 +2233,15 @@ function handleHomeworkConfirm(confirmButton) {
 }
 
 /**
- * Следит за появлением диалога подтверждения при выдаче домашнего задания
+ * Следит за появлением диалогов подтверждения при выдаче домашнего задания
  * @returns {void}
  */
 function initHomeworkConfirm() {
     const observer = new MutationObserver(() => {
-        const button = document.querySelector(HOMEWORK_CONFIRM_SELECTOR);
-        if (button) handleHomeworkConfirm(button);
+        HOMEWORK_CONFIRM_DIALOGS.forEach(({ selector, setting }) => {
+            const button = document.querySelector(selector);
+            if (button) handleHomeworkConfirm(button, setting);
+        });
     });
     observer.observe(document.body, { childList: true, subtree: true });
 }
@@ -6462,6 +6482,12 @@ function createScheduleTab(currentSettings) {
             'Подтверждать смену учеников',
             'Диалог «Изменение состава учащихся» при выборе «Выборочно» подтверждается сам',
             currentSettings.homeworkAutoConfirm !== false
+        ),
+        createSwitchRow(
+            'homeworkAutoIssue',
+            'Подтверждать выдачу задания',
+            'Диалог «Выдача домашнего задания ученикам» подтверждается сам: «Выдать задание» выдаёт ДЗ сразу',
+            currentSettings.homeworkAutoIssue !== false
         )
     ));
     syncLook();
