@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         My School Color Point
 // @namespace    http://tampermonkey.net/
-// @version      2026-11-02_21-58-24
+// @version      2026-11-02_22-09-05
 // @description  Окрашивает оценки в разные цвета в Моя Школа
 // @author       Tafintsev Feodor taf.f11@ya.ru
 // @match        https://authedu.mosreg.ru/*
@@ -22,7 +22,7 @@
  * Используется в Tampermonkey и отображается в меню настроек
  * Подставляется автоматически при сборке (build.sh)
  */
-const VERSION = '2026-11-02_21-58-24';
+const VERSION = '2026-11-02_22-09-05';
 
 /**
  * Основная конфигурация скрипта
@@ -107,8 +107,18 @@ const CONFIG = {
     CONTROL_FORMS: {
         /** CSS-класс для поиска span элементов в thead */
         SPAN_CLASS: '.DSXOGdoSiFGKohRuaDDx.ebIBbAN3ZomwnCMWP167._ELGiVRWaoZZRQLlT7eO.LqxH9tRjFX8eUgojIkc1.p2N_yf8k6HEnunN8Zt12.E8taxZlPjqlq_tc1djmu.uikwDrsLuFZMfBupkv7A',
-        /** Запрещённые для изменения формы контроля */
-        RESTRICTED: ['Диалог', 'Докл', 'УчЗ']
+        /**
+         * Формы, оценку по которым можно ставить и менять только в день урока (названия, без учёта регистра)
+         * Список тот же, что SAME_DAY_FORMS в проекте school-journal
+         */
+        RESTRICTED_NAMES: [
+            'Выразительное чтение', 'Диалог/полилог', 'Доклад', 'Зачет', 'Монолог', 'Опрос', 'Пересказ',
+            'Письменный ответ', 'Решение задач', 'Смысловое чтение', 'Тестирование физических качеств',
+            'Техника чтения', 'Устный ответ', 'Устный счет', 'Учебная работа', 'Учебное задание',
+            'Учебное упражнение', 'Чтение'
+        ],
+        /** Сокращения тех же форм из шапки журнала на случай, если справочник сайта не загрузился */
+        RESTRICTED: ['Диалог', 'Докл', 'Зачет', 'Опрос', 'РЗ', 'Устн', 'УчЗ']
     }
 };
 
@@ -1152,6 +1162,83 @@ function colorizeSummaryRow(row) {
 
 
 // ============================================================
+// ФОРМЫ КОНТРОЛЯ: сокращения запрещённых форм из справочника сайта
+// ============================================================
+
+/**
+ * Справочник форм контроля предмета открытого журнала
+ * - Сайт показывает в шапке журнала сокращение формы (short_name), а запрещённые формы заданы названиями
+ * - Сопоставление берётся из справочника сайта; пока он не загружен (или журнал не определился) работает
+ *   запасной список сокращений из CONFIG.CONTROL_FORMS.RESTRICTED
+ */
+const ControlForms = {
+    /** @type {Map<number, Set<string>>} Номер журнала -> сокращения запрещённых форм */
+    cache: new Map(),
+
+    /** @type {Set<number>} Журналы, по которым справочник уже запрошен (удачно или нет) */
+    requested: new Set(),
+
+    /**
+     * Номер журнала (группы) из адреса страницы
+     * @returns {number|null} null, если это не журнал группы
+     */
+    groupId() {
+        const match = window.location.pathname.match(/\/journal\/my\/(\d+)/);
+        return match ? Number(match[1]) : null;
+    },
+
+    /**
+     * Сокращения запрещённых форм текущего журнала
+     * Если справочник не загружен, возвращает запасной список; загрузку запускает один раз на журнал
+     * @returns {Set<string>} Сокращения как в шапке журнала
+     */
+    restrictedShortNames() {
+        const groupId = this.groupId();
+        if (groupId && !this.requested.has(groupId)) this.load(groupId);
+
+        return this.cache.get(groupId) ?? new Set(CONFIG.CONTROL_FORMS.RESTRICTED);
+    },
+
+    /**
+     * Загружает справочник форм предмета журнала и перекрашивает шапку
+     * Ошибка не показывается: остаётся запасной список
+     * @param {number} groupId - номер журнала (группы)
+     * @returns {Promise<void>}
+     */
+    async load(groupId) {
+        this.requested.add(groupId);
+
+        try {
+            const session = ColleagueApi.session();
+            if (!session) return;
+
+            const groups = await ColleagueApi.get('/plan/teacher/v1/groups', {
+                academic_year_id: session.year, school_id: session.school, teacher_ids: session.profile
+            });
+            const group = groups.find(item => item.id === groupId);
+            if (!group?.subject_id) return;
+
+            const forms = await ColleagueApi.get('/core/teacher/v1/control_forms', {
+                academic_year_id: session.year, subject_id: group.subject_id, per_page: 1000
+            });
+            const restricted = new Set(CONFIG.CONTROL_FORMS.RESTRICTED_NAMES.map(name => name.toLowerCase()));
+            const shortNames = new Set(CONFIG.CONTROL_FORMS.RESTRICTED);
+            forms.forEach(form => {
+                if (!form.deleted_at && form.short_name && restricted.has(form.name.trim().toLowerCase())) {
+                    shortNames.add(form.short_name.trim());
+                }
+            });
+
+            this.cache.set(groupId, shortNames);
+            highlightControlForms();
+        } catch (error) {
+            console.error('Не удалось загрузить формы контроля:', error);
+        }
+    }
+};
+
+
+// ============================================================
 // ОКРАШИВАНИЕ ТАБЛИЦЫ И ФОРМ КОНТРОЛЯ
 // ============================================================
 
@@ -1180,18 +1267,19 @@ function colorizeTable(tableBody) {
 /**
  * Подсвечивает запрещённые для изменения формы контроля в заголовке таблицы
  * - Находит все span элементы с указанным классом в thead
- * - Проверяет текст на соответствие запрещённым формам
+ * - Проверяет сокращение на соответствие запрещённым формам (справочник сайта, см. ControlForms)
  * - Применяет красный цвет к совпадениям
  * @returns {void}
  */
 function highlightControlForms() {
     const selector = `thead span${CONFIG.CONTROL_FORMS.SPAN_CLASS}`;
     const spans = document.querySelectorAll(selector);
+    const restricted = ControlForms.restrictedShortNames();
 
     spans.forEach(span => {
         const spanText = span.textContent.trim();
 
-        if (CONFIG.CONTROL_FORMS.RESTRICTED.includes(spanText)) {
+        if (restricted.has(spanText)) {
             span.style.color = COLORS.RESTRICTED_CONTROL;
             span.parentElement.style.background = COLORS.WARNING;
         }
