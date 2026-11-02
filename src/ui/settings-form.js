@@ -24,6 +24,12 @@ const SETTINGS_TABS = [
         label: 'Токен',
         isAvailable: () => true,
         build: createAccessTab
+    },
+    {
+        id: 'addons',
+        label: 'Дополнения',
+        isAvailable: () => ADDONS.size > 0,
+        build: createAddonsTab
     }
 ];
 

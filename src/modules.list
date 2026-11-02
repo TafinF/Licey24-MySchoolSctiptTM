@@ -34,6 +34,7 @@ schedule/page.js
 ui/icons.js
 ui/buttons.js
 ui/export.js
+ui/addons.js
 ui/settings-form.js
 ui/modal.js
 ui/pick-student.js

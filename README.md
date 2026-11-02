@@ -71,3 +71,11 @@ https://chromewebstore.google.com/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmp
 - Порядок модулей — `src/modules.list` (новый файл нужно добавить туда).
 - Шапка userscript — `src/header.txt`; версия подставляется при сборке.
 - Запускать в Git Bash (есть вместе с Git for Windows).
+
+## Дополнения
+
+Другие userscript могут сообщить скрипту о себе: в настройках появится вкладка «Дополнения» со статусом подключения.
+Скрипт ничего не знает о конкретных дополнениях, обмен идёт событиями на `document` (данные строкой JSON, `src/ui/addons.js`):
+
+- дополнение → скрипту: событие `mscp:addon`, `detail` = `{"id", "title", "status": "ok|warn|error|pending", "text", "rows": [{"label", "value"}]}`;
+- скрипт → дополнению: `mscp:addons-ready` (скрипт загрузился, пришлите статус) и `mscp:addon-refresh` (`detail` = id, кнопка «Проверить сейчас»).

@@ -414,6 +414,24 @@ function createStyles() {
             color: #6b7280;
         }
 
+        /* Вкладка «Дополнения»: точка статуса и значения строк */
+        .mscp-addon-dot {
+            display: inline-block;
+            width: 9px;
+            height: 9px;
+            margin-right: 8px;
+            border-radius: 50%;
+            background: #9ca3af;
+        }
+        .mscp-addon-ok { background: #22c55e; }
+        .mscp-addon-warn { background: #f59e0b; }
+        .mscp-addon-error { background: #ef4444; }
+        .mscp-addon-value {
+            text-align: right;
+            max-width: 60%;
+            overflow-wrap: anywhere;
+        }
+
         .mscp-btn-action {
             flex: none;
             padding: 7px 16px;
