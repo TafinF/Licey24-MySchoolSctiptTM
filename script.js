@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         My School Color Point
 // @namespace    http://tampermonkey.net/
-// @version      2026-11-02_14-51-56
+// @version      2026-11-02_21-35-59
 // @description  Окрашивает оценки в разные цвета в Моя Школа
 // @author       Tafintsev Feodor taf.f11@ya.ru
 // @match        https://authedu.mosreg.ru/*
@@ -22,7 +22,7 @@
  * Используется в Tampermonkey и отображается в меню настроек
  * Подставляется автоматически при сборке (build.sh)
  */
-const VERSION = '2026-11-02_14-51-56';
+const VERSION = '2026-11-02_21-35-59';
 
 /**
  * Основная конфигурация скрипта
@@ -88,8 +88,8 @@ const CONFIG = {
         MAX_WEEKS: 80
     },
 
-    /** Заготовки комментариев для карточки выставления оценки */
-    COMMENT_PRESETS: ['Ответ теории', 'Решение задач', 'Проверка ДЗ'],
+    /** Ограничение длины одного быстрого комментария (символов) */
+    COMMENT_PRESET_MAX_LENGTH: 300,
 
     /** URL-паттерн для страниц журнала */
     URL_PATTERN: /^https:\/\/authedu\.mosreg\.ru\/teacher\/study-process\/journal\/(?:grade|my)\/[0-9]+(\?.*)?$/,
@@ -242,7 +242,11 @@ const DEFAULT_SETTINGS = {
     /** Время начала и конца урока на карточке в заменённом расписании */
     scheduleShowTime: true,
     /** Выбор ученика для ответа: biased — предвзято (по оценкам и давности), random — все равновероятны */
-    pickMode: 'biased'
+    pickMode: 'biased',
+    /** Свои быстрые комментарии в карточке оценки (по умолчанию кнопок нет) */
+    commentPresets: [],
+    /** Кнопка комментария сразу сохраняет оценку в карточке */
+    commentFinishWithButton: false
 };
 
 /** Способы выбора ученика для ответа */
@@ -1966,6 +1970,48 @@ function createStyles() {
             padding-top: 8px;
         }
 
+        /* Список быстрых комментариев */
+        .mscp-presets {
+            margin-top: 8px;
+        }
+        .mscp-preset-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 8px;
+        }
+        .mscp-text-input {
+            flex: 1;
+            min-width: 0;
+            padding: 7px 10px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            font: inherit;
+            font-size: 13px;
+            color: #1f2937;
+            background-color: white;
+        }
+        .mscp-text-input:focus {
+            outline: 2px solid #9db0f5;
+            border-color: #496be8;
+        }
+        .mscp-preset-remove {
+            flex: none;
+            width: 30px;
+            height: 30px;
+            border: none;
+            border-radius: 50%;
+            background: none;
+            font-size: 20px;
+            line-height: 1;
+            color: #6b7280;
+            cursor: pointer;
+        }
+        .mscp-preset-remove:hover {
+            background-color: #fee2e2;
+            color: #b91c1c;
+        }
+
         /* Переключатель из нескольких кнопок */
         .mscp-seg {
             flex: none;
@@ -2036,14 +2082,44 @@ function setTextareaValue(textarea, text) {
 }
 
 /**
+ * Достаёт из настроек список быстрых комментариев: только непустые строки
+ * @param {Object} settings - настройки
+ * @returns {string[]} Список комментариев
+ */
+function getCommentPresets(settings) {
+    if (!Array.isArray(settings.commentPresets)) return [];
+    return settings.commentPresets
+        .filter(text => typeof text === 'string')
+        .map(text => text.trim())
+        .filter(Boolean);
+}
+
+/**
+ * Сохраняет оценку в открытой карточке, если кнопка "Сохранить" уже доступна
+ * Она недоступна, пока в карточке не выбрана оценка, — тогда ничего не происходит
+ * @param {HTMLTextAreaElement} textarea - поле комментария этой карточки
+ * @returns {void}
+ */
+function saveFastCard(textarea) {
+    const popup = textarea.closest('[data-test-component$="-FastPopup"]');
+    const saveButton = popup?.querySelector('[data-test-component="FastSave"]');
+    if (saveButton && !saveButton.disabled) saveButton.click();
+}
+
+/**
  * Добавляет кнопки быстрых комментариев под поле комментария в карточке оценки
  * Повторный вызов для того же поля ничего не делает
+ * Если своих комментариев нет, кнопок нет
  * @param {HTMLTextAreaElement} textarea - поле комментария
  * @returns {void}
  */
 function addCommentButtons(textarea) {
     const container = textarea.closest('[data-test-component$="InputSharedContainerInTextAreaComponent"]');
-    if (!container || container.nextElementSibling?.classList.contains('mscp-comment-presets')) return;
+    if (!container || container.dataset.mscpPresets) return;
+    container.dataset.mscpPresets = '1';
+
+    const presets = getCommentPresets(loadSettings());
+    if (!presets.length) return;
 
     if (!document.getElementById('mscp-comment-styles')) {
         const styleEl = document.createElement('style');
@@ -2072,13 +2148,17 @@ function addCommentButtons(textarea) {
 
     const panel = document.createElement('div');
     panel.className = 'mscp-comment-presets';
-    CONFIG.COMMENT_PRESETS.forEach(text => {
+    presets.forEach(text => {
         const button = document.createElement('button');
         button.type = 'button';
         button.textContent = text;
         button.addEventListener('click', () => {
             setTextareaValue(textarea, text);
             textarea.focus();
+            // Настройку читаем в момент нажатия, чтобы она действовала без перезагрузки
+            if (loadSettings().commentFinishWithButton) {
+                setTimeout(() => saveFastCard(textarea), 0);
+            }
         });
         panel.appendChild(button);
     });
@@ -6126,6 +6206,12 @@ const SETTINGS_TABS = [
         build: createScheduleTab
     },
     {
+        id: 'comments',
+        label: 'Комментарии',
+        isAvailable: () => true,
+        build: createCommentsTab
+    },
+    {
         id: 'access',
         label: 'Токен',
         isAvailable: () => true,
@@ -6327,6 +6413,123 @@ function createScheduleTab(currentSettings) {
 }
 
 /**
+ * Создаёт вкладку "Комментарии": свои кнопки быстрых комментариев и сохранение оценки кнопкой
+ * Кнопки хранятся в настройках (localStorage) и показываются в карточке оценки
+ * @param {Object} currentSettings - текущие настройки
+ * @returns {HTMLElement} DOM-элемент вкладки
+ */
+function createCommentsTab(currentSettings) {
+    const tab = document.createElement('div');
+
+    const finishRow = createSwitchRow(
+        'commentFinishWithButton',
+        'Завершать оценку кнопкой',
+        'Выберите оценку и нажмите кнопку комментария: комментарий подставится, и оценка сразу сохранится. Если «Сохранить» в карточке ещё недоступна (нет оценки или формы контроля), кнопка только подставит комментарий',
+        currentSettings.commentFinishWithButton === true
+    );
+
+    tab.append(
+        createSection('Быстрые комментарии', createPresetsEditor(currentSettings)),
+        createSection('Сохранение', finishRow)
+    );
+    return tab;
+}
+
+/**
+ * Создаёт редактор списка быстрых комментариев: правка на месте, удаление и добавление
+ * Изменения сохраняются сразу, как и остальные настройки
+ * @param {Object} currentSettings - текущие настройки (обновляется после сохранения)
+ * @returns {HTMLElement} DOM-элемент редактора
+ */
+function createPresetsEditor(currentSettings) {
+    const editor = document.createElement('div');
+
+    const hint = document.createElement('div');
+    hint.className = 'mscp-row-desc';
+    hint.textContent = 'Кнопки появляются под полем комментария в карточке оценки. По умолчанию их нет. '
+        + 'Чтобы убрать кнопку, очистите её текст или нажмите ×';
+
+    const list = document.createElement('div');
+    list.className = 'mscp-presets';
+
+    const addRow = document.createElement('div');
+    addRow.className = 'mscp-preset-row';
+    const addInput = createPresetInput('Новый комментарий');
+    const addButton = document.createElement('button');
+    addButton.type = 'button';
+    addButton.className = 'mscp-btn-action';
+    addButton.textContent = 'Добавить';
+    addRow.append(addInput, addButton);
+
+    /** Записывает список в настройки и перерисовывает редактор */
+    const commit = presets => {
+        const settings = loadSettings();
+        settings.commentPresets = presets;
+        saveSettings(settings);
+        currentSettings.commentPresets = presets;
+        render();
+    };
+
+    const render = () => {
+        const presets = getCommentPresets(currentSettings);
+        list.replaceChildren(...presets.map((text, index) => {
+            const row = document.createElement('div');
+            row.className = 'mscp-preset-row';
+
+            const input = createPresetInput('');
+            input.value = text;
+            input.addEventListener('change', () => {
+                const value = input.value.trim();
+                commit(value
+                    ? presets.map((item, i) => (i === index ? value : item))
+                    : presets.filter((item, i) => i !== index));
+            });
+
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'mscp-preset-remove';
+            remove.title = 'Удалить';
+            remove.textContent = '×';
+            remove.addEventListener('click', () => commit(presets.filter((item, i) => i !== index)));
+
+            row.append(input, remove);
+            return row;
+        }));
+    };
+
+    const add = () => {
+        const value = addInput.value.trim();
+        if (!value) return;
+        const presets = getCommentPresets(currentSettings);
+        if (!presets.includes(value)) commit([...presets, value]);
+        addInput.value = '';
+        addInput.focus();
+    };
+    addButton.addEventListener('click', add);
+    addInput.addEventListener('keydown', event => {
+        if (event.key === 'Enter') add();
+    });
+
+    render();
+    editor.append(hint, list, addRow);
+    return editor;
+}
+
+/**
+ * Создаёт текстовое поле для быстрого комментария
+ * @param {string} placeholder - подсказка в пустом поле
+ * @returns {HTMLInputElement} DOM-элемент поля
+ */
+function createPresetInput(placeholder) {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'mscp-text-input';
+    input.placeholder = placeholder;
+    input.maxLength = CONFIG.COMMENT_PRESET_MAX_LENGTH;
+    return input;
+}
+
+/**
  * Создаёт вкладку "Токен": токен входа для проекта школьного журнала
  * @returns {HTMLElement} DOM-элемент вкладки
  */
@@ -6481,6 +6684,9 @@ function applySettings(settings, key) {
         syncScheduleLayout(window.location.href);
         return;
     }
+
+    // Комментарии читаются из настроек в момент открытия карточки оценки
+    if (key.startsWith('comment')) return;
 
     if (!isTargetUrl(window.location.href)) return;
 

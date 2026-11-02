@@ -16,6 +16,9 @@ function applySettings(settings, key) {
         return;
     }
 
+    // Комментарии читаются из настроек в момент открытия карточки оценки
+    if (key.startsWith('comment')) return;
+
     if (!isTargetUrl(window.location.href)) return;
 
     JournalState.settings = settings;

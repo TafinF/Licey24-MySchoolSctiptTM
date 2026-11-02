@@ -20,6 +20,12 @@ const SETTINGS_TABS = [
         build: createScheduleTab
     },
     {
+        id: 'comments',
+        label: 'Комментарии',
+        isAvailable: () => true,
+        build: createCommentsTab
+    },
+    {
         id: 'access',
         label: 'Токен',
         isAvailable: () => true,
@@ -218,6 +224,123 @@ function createScheduleTab(currentSettings) {
     syncLook();
 
     return tab;
+}
+
+/**
+ * Создаёт вкладку "Комментарии": свои кнопки быстрых комментариев и сохранение оценки кнопкой
+ * Кнопки хранятся в настройках (localStorage) и показываются в карточке оценки
+ * @param {Object} currentSettings - текущие настройки
+ * @returns {HTMLElement} DOM-элемент вкладки
+ */
+function createCommentsTab(currentSettings) {
+    const tab = document.createElement('div');
+
+    const finishRow = createSwitchRow(
+        'commentFinishWithButton',
+        'Завершать оценку кнопкой',
+        'Выберите оценку и нажмите кнопку комментария: комментарий подставится, и оценка сразу сохранится. Если «Сохранить» в карточке ещё недоступна (нет оценки или формы контроля), кнопка только подставит комментарий',
+        currentSettings.commentFinishWithButton === true
+    );
+
+    tab.append(
+        createSection('Быстрые комментарии', createPresetsEditor(currentSettings)),
+        createSection('Сохранение', finishRow)
+    );
+    return tab;
+}
+
+/**
+ * Создаёт редактор списка быстрых комментариев: правка на месте, удаление и добавление
+ * Изменения сохраняются сразу, как и остальные настройки
+ * @param {Object} currentSettings - текущие настройки (обновляется после сохранения)
+ * @returns {HTMLElement} DOM-элемент редактора
+ */
+function createPresetsEditor(currentSettings) {
+    const editor = document.createElement('div');
+
+    const hint = document.createElement('div');
+    hint.className = 'mscp-row-desc';
+    hint.textContent = 'Кнопки появляются под полем комментария в карточке оценки. По умолчанию их нет. '
+        + 'Чтобы убрать кнопку, очистите её текст или нажмите ×';
+
+    const list = document.createElement('div');
+    list.className = 'mscp-presets';
+
+    const addRow = document.createElement('div');
+    addRow.className = 'mscp-preset-row';
+    const addInput = createPresetInput('Новый комментарий');
+    const addButton = document.createElement('button');
+    addButton.type = 'button';
+    addButton.className = 'mscp-btn-action';
+    addButton.textContent = 'Добавить';
+    addRow.append(addInput, addButton);
+
+    /** Записывает список в настройки и перерисовывает редактор */
+    const commit = presets => {
+        const settings = loadSettings();
+        settings.commentPresets = presets;
+        saveSettings(settings);
+        currentSettings.commentPresets = presets;
+        render();
+    };
+
+    const render = () => {
+        const presets = getCommentPresets(currentSettings);
+        list.replaceChildren(...presets.map((text, index) => {
+            const row = document.createElement('div');
+            row.className = 'mscp-preset-row';
+
+            const input = createPresetInput('');
+            input.value = text;
+            input.addEventListener('change', () => {
+                const value = input.value.trim();
+                commit(value
+                    ? presets.map((item, i) => (i === index ? value : item))
+                    : presets.filter((item, i) => i !== index));
+            });
+
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'mscp-preset-remove';
+            remove.title = 'Удалить';
+            remove.textContent = '×';
+            remove.addEventListener('click', () => commit(presets.filter((item, i) => i !== index)));
+
+            row.append(input, remove);
+            return row;
+        }));
+    };
+
+    const add = () => {
+        const value = addInput.value.trim();
+        if (!value) return;
+        const presets = getCommentPresets(currentSettings);
+        if (!presets.includes(value)) commit([...presets, value]);
+        addInput.value = '';
+        addInput.focus();
+    };
+    addButton.addEventListener('click', add);
+    addInput.addEventListener('keydown', event => {
+        if (event.key === 'Enter') add();
+    });
+
+    render();
+    editor.append(hint, list, addRow);
+    return editor;
+}
+
+/**
+ * Создаёт текстовое поле для быстрого комментария
+ * @param {string} placeholder - подсказка в пустом поле
+ * @returns {HTMLInputElement} DOM-элемент поля
+ */
+function createPresetInput(placeholder) {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'mscp-text-input';
+    input.placeholder = placeholder;
+    input.maxLength = CONFIG.COMMENT_PRESET_MAX_LENGTH;
+    return input;
 }
 
 /**

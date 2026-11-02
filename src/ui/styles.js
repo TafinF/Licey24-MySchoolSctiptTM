@@ -518,6 +518,48 @@ function createStyles() {
             padding-top: 8px;
         }
 
+        /* Список быстрых комментариев */
+        .mscp-presets {
+            margin-top: 8px;
+        }
+        .mscp-preset-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 8px;
+        }
+        .mscp-text-input {
+            flex: 1;
+            min-width: 0;
+            padding: 7px 10px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            font: inherit;
+            font-size: 13px;
+            color: #1f2937;
+            background-color: white;
+        }
+        .mscp-text-input:focus {
+            outline: 2px solid #9db0f5;
+            border-color: #496be8;
+        }
+        .mscp-preset-remove {
+            flex: none;
+            width: 30px;
+            height: 30px;
+            border: none;
+            border-radius: 50%;
+            background: none;
+            font-size: 20px;
+            line-height: 1;
+            color: #6b7280;
+            cursor: pointer;
+        }
+        .mscp-preset-remove:hover {
+            background-color: #fee2e2;
+            color: #b91c1c;
+        }
+
         /* Переключатель из нескольких кнопок */
         .mscp-seg {
             flex: none;
