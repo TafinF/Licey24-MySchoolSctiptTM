@@ -27,19 +27,18 @@ function colorizeTable(tableBody) {
 /**
  * Подсвечивает запрещённые для изменения формы контроля в заголовке таблицы
  * - Находит все span элементы с указанным классом в thead
- * - Проверяет сокращение на соответствие запрещённым формам (справочник сайта, см. ControlForms)
+ * - Проверяет текст на соответствие запрещённым формам
  * - Применяет красный цвет к совпадениям
  * @returns {void}
  */
 function highlightControlForms() {
     const selector = `thead span${CONFIG.CONTROL_FORMS.SPAN_CLASS}`;
     const spans = document.querySelectorAll(selector);
-    const restricted = ControlForms.restrictedShortNames();
 
     spans.forEach(span => {
         const spanText = span.textContent.trim();
 
-        if (restricted.has(spanText)) {
+        if (CONFIG.CONTROL_FORMS.RESTRICTED.includes(spanText)) {
             span.style.color = COLORS.RESTRICTED_CONTROL;
             span.parentElement.style.background = COLORS.WARNING;
         }
