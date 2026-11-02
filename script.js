@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         My School Color Point
 // @namespace    http://tampermonkey.net/
-// @version      2026-11-02_21-55-27
+// @version      2026-11-02_21-58-24
 // @description  Окрашивает оценки в разные цвета в Моя Школа
 // @author       Tafintsev Feodor taf.f11@ya.ru
 // @match        https://authedu.mosreg.ru/*
@@ -22,7 +22,7 @@
  * Используется в Tampermonkey и отображается в меню настроек
  * Подставляется автоматически при сборке (build.sh)
  */
-const VERSION = '2026-11-02_21-55-27';
+const VERSION = '2026-11-02_21-58-24';
 
 /**
  * Основная конфигурация скрипта
@@ -2102,15 +2102,21 @@ function getCommentPresets(settings) {
         .filter(Boolean);
 }
 
+/** Поля комментария в карточках оценки: быстрой (всплывающей) и расширенной (боковой) */
+const COMMENT_TEXTAREA_SELECTOR = 'textarea[name="comment"][data-test-component^="markFastCard"], '
+    + 'textarea[name="comment"][data-test-component^="AdvancedMarkCard"]';
+
 /**
- * Сохраняет оценку в открытой карточке, если кнопка "Сохранить" уже доступна
- * Она недоступна, пока в карточке не выбрана оценка, — тогда ничего не происходит
+ * Сохраняет оценку в открытой карточке, если кнопка сохранения уже доступна
+ * Она недоступна, пока в карточке не выбрана оценка (и форма контроля), — тогда ничего не происходит
  * @param {HTMLTextAreaElement} textarea - поле комментария этой карточки
  * @returns {void}
  */
 function saveFastCard(textarea) {
-    const popup = textarea.closest('[data-test-component$="-FastPopup"]');
-    const saveButton = popup?.querySelector('[data-test-component="FastSave"]');
+    const fast = textarea.closest('[data-test-component$="-FastPopup"]');
+    const advanced = textarea.closest('[data-test-component$="-AdvancedSidePage-sidePage"]');
+    const saveButton = fast?.querySelector('[data-test-component="FastSave"]')
+        ?? advanced?.querySelector('[data-test-component="AdvancedMarkCard-footerSidePage-actionBarPrimaryButton"]');
     if (saveButton && !saveButton.disabled) saveButton.click();
 }
 
@@ -2180,8 +2186,7 @@ function addCommentButtons(textarea) {
  */
 function initCommentPresets() {
     const observer = new MutationObserver(() => {
-        document.querySelectorAll('textarea[name="comment"][data-test-component^="markFastCard"]')
-            .forEach(addCommentButtons);
+        document.querySelectorAll(COMMENT_TEXTAREA_SELECTOR).forEach(addCommentButtons);
     });
     observer.observe(document.body, { childList: true, subtree: true });
 }
