@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         My School Color Point
 // @namespace    http://tampermonkey.net/
-// @version      2026-11-02_22-23-44
+// @version      2026-11-02_22-43-34
 // @description  Окрашивает оценки в разные цвета в Моя Школа
 // @author       Tafintsev Feodor taf.f11@ya.ru
 // @match        https://authedu.mosreg.ru/*
@@ -22,7 +22,7 @@
  * Используется в Tampermonkey и отображается в меню настроек
  * Подставляется автоматически при сборке (build.sh)
  */
-const VERSION = '2026-11-02_22-23-44';
+const VERSION = '2026-11-02_22-43-34';
 
 /**
  * Основная конфигурация скрипта
