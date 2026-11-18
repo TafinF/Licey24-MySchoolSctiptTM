@@ -64,7 +64,7 @@ function shortJournalTitle(title) {
  * @returns {void}
  */
 function shortenJournalTitle() {
-    const heading = JournalState.watchElement?.querySelector('h6');
+    const heading = JournalState.watchElement?.querySelector(CONFIG.SELECTORS.JOURNAL_TITLE);
     const node = heading?.firstChild;
     if (heading?.childNodes.length !== 1 || node.nodeType !== Node.TEXT_NODE) return;
 

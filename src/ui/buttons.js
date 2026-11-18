@@ -104,12 +104,12 @@ function insertButtons() {
     if (!document.querySelector(CONFIG.SELECTORS.MAIN_SECTION)) return false;
 
     const parentElement = document.querySelector(CONFIG.SELECTORS.PARENT_BUTTON_CONTAINER);
-    const h6Element = parentElement?.querySelector('h6');
-    if (!h6Element) return false;
+    const titleElement = parentElement?.querySelector(CONFIG.SELECTORS.JOURNAL_TITLE);
+    if (!titleElement) return false;
 
     console.log('Вставляем кнопки управления');
 
-    JournalState.watchElement = h6Element.parentNode;
+    JournalState.watchElement = titleElement.parentNode;
 
     createStyles();
     createButtons(JournalState.watchElement);

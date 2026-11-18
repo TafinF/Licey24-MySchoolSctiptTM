@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         My School Color Point
 // @namespace    http://tampermonkey.net/
-// @version      2026-11-02_22-43-34
+// @version      2026-11-18_21-53-34
 // @description  Окрашивает оценки в разные цвета в Моя Школа
 // @author       Tafintsev Feodor taf.f11@ya.ru
 // @match        https://authedu.mosreg.ru/*
@@ -22,7 +22,7 @@
  * Используется в Tampermonkey и отображается в меню настроек
  * Подставляется автоматически при сборке (build.sh)
  */
-const VERSION = '2026-11-02_22-43-34';
+const VERSION = '2026-11-18_21-53-34';
 
 /**
  * Основная конфигурация скрипта
@@ -49,7 +49,10 @@ const CONFIG = {
     /** CSS-селекторы для поиска элементов на странице */
     SELECTORS: {
         MODAL_TRIGGER: '.FDJEFXkDpWhBLZDxnInU.hGtB0oSuryeRiAS2J57Y.Qp8HUr00NXY26hlHOZwb.cbtxLJutW4h15oSu11WO.IfMLW0irD86BmgWhT8FP.C0qHlb4C7fAcYrnlODD0.false.NxJu2UTTgygYiAOvhTvC.IFkWdTtYw_C_ncCuZmUF.Cb3mMUc4RqGu4myaBrNy',
-        PARENT_BUTTON_CONTAINER: '[data-test-component="undefined-subheaderTitle-titleContainer"]',
+        /** Контейнер названия журнала: префикс data-test-component у сайта бывает "undefined-", поэтому ищем по окончанию */
+        PARENT_BUTTON_CONTAINER: '[data-test-component$="subheaderTitle-titleContainer"]',
+        /** Заголовок журнала внутри контейнера: сайт выводит <h5> или <h6> в зависимости от размера подзаголовка */
+        JOURNAL_TITLE: 'h5, h6',
         /** Кнопка открытия штатной панели настроек журнала */
         SETTINGS_BUTTON: '[data-test-component="JournalLayersPopupSettings"]',
         /** Переключатели "Дополнительно" в панели настроек (по порядку: по теме, по периоду, выбывшие) */
@@ -1296,7 +1299,7 @@ function shortJournalTitle(title) {
  * @returns {void}
  */
 function shortenJournalTitle() {
-    const heading = JournalState.watchElement?.querySelector('h6');
+    const heading = JournalState.watchElement?.querySelector(CONFIG.SELECTORS.JOURNAL_TITLE);
     const node = heading?.firstChild;
     if (heading?.childNodes.length !== 1 || node.nodeType !== Node.TEXT_NODE) return;
 
@@ -6328,12 +6331,12 @@ function insertButtons() {
     if (!document.querySelector(CONFIG.SELECTORS.MAIN_SECTION)) return false;
 
     const parentElement = document.querySelector(CONFIG.SELECTORS.PARENT_BUTTON_CONTAINER);
-    const h6Element = parentElement?.querySelector('h6');
-    if (!h6Element) return false;
+    const titleElement = parentElement?.querySelector(CONFIG.SELECTORS.JOURNAL_TITLE);
+    if (!titleElement) return false;
 
     console.log('Вставляем кнопки управления');
 
-    JournalState.watchElement = h6Element.parentNode;
+    JournalState.watchElement = titleElement.parentNode;
 
     createStyles();
     createButtons(JournalState.watchElement);
