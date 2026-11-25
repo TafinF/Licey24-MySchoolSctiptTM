@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         My School Color Point
 // @namespace    http://tampermonkey.net/
-// @version      2026-11-18_21-53-34
+// @version      2026-11-25_20-39-53
 // @description  Окрашивает оценки в разные цвета в Моя Школа
 // @author       Tafintsev Feodor taf.f11@ya.ru
 // @match        https://authedu.mosreg.ru/*
@@ -22,7 +22,7 @@
  * Используется в Tampermonkey и отображается в меню настроек
  * Подставляется автоматически при сборке (build.sh)
  */
-const VERSION = '2026-11-18_21-53-34';
+const VERSION = '2026-11-25_20-39-53';
 
 /**
  * Основная конфигурация скрипта
@@ -4952,7 +4952,9 @@ const HomeworkApi = {
     },
 
     /**
-     * Уроки учителя за день по времени начала; отменённые и перенесённые на другую дату не берутся
+     * Уроки учителя за день по времени начала; отменённые не берутся.
+     * Перенесённые (transferred_to_date) берутся: в лицее так помечают копию расписания на субботу,
+     * урок реально идёт и в исходный день, и в субботу — ДЗ и комментарии нужны в оба дня.
      * @param {string} iso - день в виде ГГГГ-ММ-ДД
      * @returns {Promise<Array<{id: number, groupId: number, time: string, className: string, subject: string,
      *          subjectId: ?number, studentIds: number[], existingIds: number[], ready: boolean}>>}
@@ -4969,8 +4971,10 @@ const HomeworkApi = {
         ]);
 
         const pad = value => String(value).padStart(2, '0');
+        // В лицее «перенос» в API — это ещё и копия расписания на субботу: урок реально
+        // идёт в оба дня, поэтому transferred_to_date не повод его скрывать.
         return items
-            .filter(item => !item.cancelled && !item.transferred_to_date)
+            .filter(item => !item.cancelled)
             .map(item => {
                 const group = groups.get(item.group_id);
                 return {
