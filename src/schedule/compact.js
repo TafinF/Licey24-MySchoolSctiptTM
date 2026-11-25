@@ -5,12 +5,17 @@
 /**
  * Сокращает название журнала до "Предмет Класс"
  * "Физика 9-В 9 кл. нем.яз. 26/27" → "Физика 9-В"
+ * "Физика 7 НДО Дятлов Игорь Семенович 7 НДО" → "Физика 7 НДО"
  * @param {string} name - полное название журнала
  * @returns {string} Короткое название (если формат не узнан, название без изменений)
  */
 function shortenJournalName(name) {
-    const match = /^(\S+)\s+(\d{1,2}\s*-\s*\S+)/.exec(name.trim());
-    return match ? `${match[1]} ${match[2].replace(/\s+/g, '')}` : name.trim();
+    const trimmed = name.trim();
+    const found = findJournalClass(trimmed);
+    if (!found) return trimmed;
+
+    const subject = trimmed.slice(0, found.index).trim();
+    return subject ? `${subject} ${found.name}` : trimmed;
 }
 
 /**

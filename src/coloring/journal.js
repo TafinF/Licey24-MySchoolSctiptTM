@@ -45,17 +45,18 @@ function processJournalTable(force = false) {
 /**
  * Короткое название журнала: без слова "Журнал" в начале и всего, что идёт после класса
  * "Журнал Физика 11-А 11А нем.яз. 26/27" → "Физика 11-А"
+ * "Журнал Физика 7 НДО Дятлов Игорь Семенович 7 НДО" → "Физика 7 НДО"
  * Если до класса предмета нет (название вида "11-А Физика") или класс не найден, название не меняется
  * @param {string} title - название журнала с сайта
  * @returns {string} короткое название
  */
 function shortJournalTitle(title) {
     const withoutWord = title.replace(/^\s*Журнал\s+/iu, '');
-    const classMatch = /(?:^|\s)(\d{1,2}\s*-\s*[А-ЯЁA-Z])(?=\s|$)/iu.exec(withoutWord);
-    if (!classMatch) return title;
+    const found = findJournalClass(withoutWord);
+    if (!found) return title;
 
-    const subject = withoutWord.slice(0, classMatch.index).trim();
-    return subject ? `${subject} ${classMatch[1].replace(/\s+/g, '')}` : title;
+    const subject = withoutWord.slice(0, found.index).trim();
+    return subject ? `${subject} ${found.name}` : title;
 }
 
 /**

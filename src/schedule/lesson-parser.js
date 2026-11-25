@@ -62,7 +62,7 @@ function lessonStatusFromColor(color) {
  * @returns {string} цвет для CSS; пустая строка, если класс не распознан
  */
 function classColor(className) {
-    const match = /^(\d{1,2})-(.)/u.exec(className);
+    const match = /^(\d{1,2})(?:\s*-\s*|\s+)(\S)/u.exec(className);
     if (!match) return '';
 
     const index = Number(match[1]) * 40 + match[2].toUpperCase().codePointAt(0) % 40;
@@ -81,11 +81,11 @@ function parseLessonCard(card) {
     const time = /^\d+\.\s*(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/.exec(card.textContent.trim());
     const fullName = card.firstElementChild?.children[1]?.firstElementChild?.firstElementChild?.textContent.trim() ?? '';
 
-    const classMatch = /(?:^|\s)(\d{1,2}\s*-\s*[А-ЯЁA-Z])(?=\s|$)/iu.exec(fullName);
-    const className = classMatch ? classMatch[1].replace(/\s+/g, '') : '';
-    let subject = classMatch ? fullName.slice(0, classMatch.index).trim() : fullName;
-    if (!subject && classMatch) {
-        subject = fullName.slice(classMatch.index + classMatch[0].length).trim();
+    const found = findJournalClass(fullName);
+    const className = found ? found.name : '';
+    let subject = found ? fullName.slice(0, found.index).trim() : fullName;
+    if (!subject && found) {
+        subject = fullName.slice(found.index + found.length).trim();
     }
 
     const statusOf = kind => {

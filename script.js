@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         My School Color Point
 // @namespace    http://tampermonkey.net/
-// @version      2026-11-25_20-44-03
+// @version      2026-11-25_20-49-46
 // @description  Окрашивает оценки в разные цвета в Моя Школа
 // @author       Tafintsev Feodor taf.f11@ya.ru
 // @match        https://authedu.mosreg.ru/*
@@ -22,7 +22,7 @@
  * Используется в Tampermonkey и отображается в меню настроек
  * Подставляется автоматически при сборке (build.sh)
  */
-const VERSION = '2026-11-25_20-44-03';
+const VERSION = '2026-11-25_20-49-46';
 
 /**
  * Основная конфигурация скрипта
@@ -475,6 +475,23 @@ const Utils = {
         return attr && attr.includes(value);
     }
 };
+
+/**
+ * Ищет класс в названии журнала или карточки урока: "7-А", "10-М" или "7 НДО".
+ * Названия бывают с учителем и повтором класса: "Физика 7 НДО Дятлов Игорь Семенович 7 НДО".
+ * @param {string} text - название журнала или карточки
+ * @returns {{index: number, length: number, name: string}|null} позиция в тексте и нормализованное имя класса
+ */
+function findJournalClass(text) {
+    const match = /(\d{1,2}\s*-\s*[А-ЯЁA-Z]|\d{1,2}\s+НДО)(?=\s|$)/iu.exec(text);
+    if (!match) return null;
+
+    return {
+        index: match.index,
+        length: match[0].length,
+        name: match[1].replace(/\s*-\s*/g, '-').replace(/\s+/g, ' ')
+    };
+}
 
 
 // ============================================================
@@ -1281,17 +1298,18 @@ function processJournalTable(force = false) {
 /**
  * Короткое название журнала: без слова "Журнал" в начале и всего, что идёт после класса
  * "Журнал Физика 11-А 11А нем.яз. 26/27" → "Физика 11-А"
+ * "Журнал Физика 7 НДО Дятлов Игорь Семенович 7 НДО" → "Физика 7 НДО"
  * Если до класса предмета нет (название вида "11-А Физика") или класс не найден, название не меняется
  * @param {string} title - название журнала с сайта
  * @returns {string} короткое название
  */
 function shortJournalTitle(title) {
     const withoutWord = title.replace(/^\s*Журнал\s+/iu, '');
-    const classMatch = /(?:^|\s)(\d{1,2}\s*-\s*[А-ЯЁA-Z])(?=\s|$)/iu.exec(withoutWord);
-    if (!classMatch) return title;
+    const found = findJournalClass(withoutWord);
+    if (!found) return title;
 
-    const subject = withoutWord.slice(0, classMatch.index).trim();
-    return subject ? `${subject} ${classMatch[1].replace(/\s+/g, '')}` : title;
+    const subject = withoutWord.slice(0, found.index).trim();
+    return subject ? `${subject} ${found.name}` : title;
 }
 
 /**
@@ -2449,12 +2467,17 @@ function initPastFormWarning() {
 /**
  * Сокращает название журнала до "Предмет Класс"
  * "Физика 9-В 9 кл. нем.яз. 26/27" → "Физика 9-В"
+ * "Физика 7 НДО Дятлов Игорь Семенович 7 НДО" → "Физика 7 НДО"
  * @param {string} name - полное название журнала
  * @returns {string} Короткое название (если формат не узнан, название без изменений)
  */
 function shortenJournalName(name) {
-    const match = /^(\S+)\s+(\d{1,2}\s*-\s*\S+)/.exec(name.trim());
-    return match ? `${match[1]} ${match[2].replace(/\s+/g, '')}` : name.trim();
+    const trimmed = name.trim();
+    const found = findJournalClass(trimmed);
+    if (!found) return trimmed;
+
+    const subject = trimmed.slice(0, found.index).trim();
+    return subject ? `${subject} ${found.name}` : trimmed;
 }
 
 /**
@@ -2895,7 +2918,7 @@ function lessonStatusFromColor(color) {
  * @returns {string} цвет для CSS; пустая строка, если класс не распознан
  */
 function classColor(className) {
-    const match = /^(\d{1,2})-(.)/u.exec(className);
+    const match = /^(\d{1,2})(?:\s*-\s*|\s+)(\S)/u.exec(className);
     if (!match) return '';
 
     const index = Number(match[1]) * 40 + match[2].toUpperCase().codePointAt(0) % 40;
@@ -2914,11 +2937,11 @@ function parseLessonCard(card) {
     const time = /^\d+\.\s*(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/.exec(card.textContent.trim());
     const fullName = card.firstElementChild?.children[1]?.firstElementChild?.firstElementChild?.textContent.trim() ?? '';
 
-    const classMatch = /(?:^|\s)(\d{1,2}\s*-\s*[А-ЯЁA-Z])(?=\s|$)/iu.exec(fullName);
-    const className = classMatch ? classMatch[1].replace(/\s+/g, '') : '';
-    let subject = classMatch ? fullName.slice(0, classMatch.index).trim() : fullName;
-    if (!subject && classMatch) {
-        subject = fullName.slice(classMatch.index + classMatch[0].length).trim();
+    const found = findJournalClass(fullName);
+    const className = found ? found.name : '';
+    let subject = found ? fullName.slice(0, found.index).trim() : fullName;
+    if (!subject && found) {
+        subject = fullName.slice(found.index + found.length).trim();
     }
 
     const statusOf = kind => {

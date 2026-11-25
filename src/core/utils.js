@@ -83,3 +83,20 @@ const Utils = {
         return attr && attr.includes(value);
     }
 };
+
+/**
+ * Ищет класс в названии журнала или карточки урока: "7-А", "10-М" или "7 НДО".
+ * Названия бывают с учителем и повтором класса: "Физика 7 НДО Дятлов Игорь Семенович 7 НДО".
+ * @param {string} text - название журнала или карточки
+ * @returns {{index: number, length: number, name: string}|null} позиция в тексте и нормализованное имя класса
+ */
+function findJournalClass(text) {
+    const match = /(\d{1,2}\s*-\s*[А-ЯЁA-Z]|\d{1,2}\s+НДО)(?=\s|$)/iu.exec(text);
+    if (!match) return null;
+
+    return {
+        index: match.index,
+        length: match[0].length,
+        name: match[1].replace(/\s*-\s*/g, '-').replace(/\s+/g, ' ')
+    };
+}
