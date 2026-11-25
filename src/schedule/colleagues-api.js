@@ -348,7 +348,9 @@ const ColleagueApi = {
         const days = {};
 
         items.forEach(item => {
-            if (item.cancelled || item.transferred_to_date) return;
+            // В лицее transferred_to_date — это копия расписания на субботу: урок реально идёт
+            // и в исходный день, и в субботу, поэтому показываем обе записи.
+            if (item.cancelled) return;
 
             const [year, month, day] = item.date;
             const [hours, minutes] = item.time;

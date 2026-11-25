@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         My School Color Point
 // @namespace    http://tampermonkey.net/
-// @version      2026-11-25_20-39-53
+// @version      2026-11-25_20-44-03
 // @description  Окрашивает оценки в разные цвета в Моя Школа
 // @author       Tafintsev Feodor taf.f11@ya.ru
 // @match        https://authedu.mosreg.ru/*
@@ -22,7 +22,7 @@
  * Используется в Tampermonkey и отображается в меню настроек
  * Подставляется автоматически при сборке (build.sh)
  */
-const VERSION = '2026-11-25_20-39-53';
+const VERSION = '2026-11-25_20-44-03';
 
 /**
  * Основная конфигурация скрипта
@@ -79,8 +79,9 @@ const CONFIG = {
 
     /** Расписание коллег: ключи localStorage и время жизни кеша */
     COLLEAGUES: {
-        /** Кеш списка учителей и недель расписания */
-        CACHE_KEY: 'MSCP_colleagues',
+        /** Кеш списка учителей и недель расписания; v2 — после того как перестали отбрасывать
+         *  уроки с переносом (иначе старые недели в кеше остались бы без субботних копий) */
+        CACHE_KEY: 'MSCP_colleagues_v2',
         /** Закреплённые учителя и последний выбранный (при сбросе кеша остаются) */
         FAVORITES_KEY: 'MSCP_colleagues_favorites',
         /** Список учителей обновляется раз в неделю */
@@ -3944,7 +3945,9 @@ const ColleagueApi = {
         const days = {};
 
         items.forEach(item => {
-            if (item.cancelled || item.transferred_to_date) return;
+            // В лицее transferred_to_date — это копия расписания на субботу: урок реально идёт
+            // и в исходный день, и в субботу, поэтому показываем обе записи.
+            if (item.cancelled) return;
 
             const [year, month, day] = item.date;
             const [hours, minutes] = item.time;
